@@ -3,6 +3,7 @@ package com.talktrip.talktrip.domain.chat.dto.request;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.talktrip.talktrip.domain.chat.entity.ChatMessage;
+import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -40,7 +41,7 @@ public class ChatMessageRequestDto {
                 accountEmail,
                 this.message,
                 sequenceNumber,
-                LocalDateTime.now()
+                SeoulTimeUtil.now()
         );
     }
 }

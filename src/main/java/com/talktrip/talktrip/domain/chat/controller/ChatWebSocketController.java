@@ -1,9 +1,12 @@
 package com.talktrip.talktrip.domain.chat.controller;
 
 import com.talktrip.talktrip.domain.chat.dto.request.ChatMessageRequestDto;
+import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import com.talktrip.talktrip.domain.chat.service.ChatService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
@@ -34,7 +37,7 @@ public class ChatWebSocketController {
                 "error", ex.getMessage(),
                 "errorCode", "REDIS_CONNECTION_FAILED",
                 "details", "Redis 서버에 연결할 수 없습니다.",
-                "failedAt", java.time.LocalDateTime.now().toString()
+                "failedAt", SeoulTimeUtil.nowAsString()
             );
 
             messagingTemplate.convertAndSendToUser(

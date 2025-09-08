@@ -2,6 +2,7 @@ package com.talktrip.talktrip.domain.chat.controller;
 
 
 import com.talktrip.talktrip.domain.chat.dto.response.ChatMessagePush;
+import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import com.talktrip.talktrip.global.redis.RedisMessageBroker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +29,7 @@ public class TestRedisController {
                 .sender("testuser@test.com")
                 .senderName("Tester")
                 .message(message)
-                .createdAt(LocalDateTime.now().toString())
+                .createdAt(SeoulTimeUtil.nowAsString())
                 .build();
 
         redisMessageBroker.publish(channel, pushMessage);

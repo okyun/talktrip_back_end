@@ -14,6 +14,7 @@ import com.talktrip.talktrip.domain.chat.repository.ChatRoomRepository;
 import com.talktrip.talktrip.global.dto.SliceResponse;
 import com.talktrip.talktrip.global.redis.RedisMessageBroker;
 import com.talktrip.talktrip.global.util.CursorUtil;
+import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -136,7 +137,7 @@ public class ChatService {
                         .createdAt(entity.getCreatedAt())
                         .notReadMessageCount(unreadForThisUser) // 읽지 않은 메시지 개수
                         .receiverAccountEmail(email)            // 수신자 이메일 (중복이지만 필수 필드)
-                        .updatedAt(Timestamp.valueOf(LocalDateTime.now()))
+                        .updatedAt(SeoulTimeUtil.nowAsTimestamp())
                         .unreadCountForSender(0)                // 발신자는 항상 0
                         .unreadCountForReceiver(unreadForThisUser)
                         .build());
@@ -435,7 +436,8 @@ public class ChatService {
         }
 
         // 5) 읽음 처리 (내 lastReadAt 갱신)
-        chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail);
+        // 서울 시간대를 사용하여 읽음 처리
+        chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail, SeoulTimeUtil.now());
 
         // 6) DTO 매핑
         var items = entities.stream()
@@ -582,30 +584,44 @@ public class ChatService {
     }
 
     /**
-     * 채팅방 읽음 처리 (notReadMessageCount 초기화)
+     * 채팅방 읽음 처리 (last_member_read_time 업데이트)
+     * 
+     * WHERE 절을 사용하여 room_id와 account_email로 필터링하여
+     * 해당 사용자의 last_member_read_time을 현재 시간으로 업데이트
      * 
      * 그룹채팅과 1:1 채팅 모두에서 올바르게 작동하도록 구현
      * - 그룹채팅: 각 사용자별로 개별적인 읽음 처리
      * - 1:1 채팅: 상대방의 메시지만 카운트에서 제외
      * 
-     * @param accountEmail 사용자 이메일
-     * @param roomId 채팅방 ID
+     * @param accountEmail 사용자 이메일 (WHERE 절 필터링 조건)
+     * @param roomId 채팅방 ID (WHERE 절 필터링 조건)
      * @throws AccessDeniedException 사용자가 해당 채팅방의 멤버가 아닌 경우
+     * @throws IllegalArgumentException 잘못된 파라미터가 전달된 경우
      */
     @Transactional
     public void markRoomAsRead(String accountEmail, String roomId) {
-        // 1) 사용자가 해당 채팅방의 멤버인지 권한 검사
+        // 1) 파라미터 유효성 검사
+        if (accountEmail == null || accountEmail.trim().isEmpty()) {
+            throw new IllegalArgumentException("accountEmail cannot be null or empty");
+        }
+        if (roomId == null || roomId.trim().isEmpty()) {
+            throw new IllegalArgumentException("roomId cannot be null or empty");
+        }
+
+        // 2) 사용자가 해당 채팅방의 멤버인지 권한 검사
         boolean isMember = chatRoomMemberRepository.existsByRoomIdAndAccountEmail(roomId, accountEmail);
         if (!isMember) {
             throw new AccessDeniedException("Not a member of this room: " + roomId);
         }
 
-        // 2) 읽음 처리 (lastMemberReadTime 갱신)
-        // 그룹채팅과 1:1 채팅 모두에서 각 사용자별로 개별적인 읽음 처리
-        int updatedRows = chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail);
+        // 3) 읽음 처리 (last_member_read_time 갱신)
+        // WHERE room_id = :roomId AND account_email = :accountEmail 조건으로 필터링
+        // 서울 시간대를 사용하여 읽음 처리
+        int updatedRows = chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail, SeoulTimeUtil.now());
         
         if (updatedRows == 0) {
-            log.warn("읽음 처리 실패 - 사용자: {}, 채팅방: {}", accountEmail, roomId);
+            log.warn("읽음 처리 실패 - 사용자: {}, 채팅방: {} (WHERE 조건에 맞는 레코드가 없음)", accountEmail, roomId);
+            throw new RuntimeException("읽음 처리에 실패했습니다. 해당 사용자가 채팅방의 멤버가 아닙니다.");
         } else {
             log.info("읽음 처리 완료 - 사용자: {}, 채팅방: {}, 업데이트된 행: {}", accountEmail, roomId, updatedRows);
         }

@@ -1,6 +1,7 @@
 package com.talktrip.talktrip.domain.chat.dto.response;
 
 import com.talktrip.talktrip.domain.chat.dto.request.ChatMessageRequestDto;
+import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -25,7 +26,7 @@ public class ChatMessageErrorResponse {
                 .originalMessage(originalMessage)
                 .error(error)
                 .errorCode("MESSAGE_SEND_FAILED")
-                .failedAt(LocalDateTime.now())
+                .failedAt(SeoulTimeUtil.now())
                 .details("메시지 전송 중 오류가 발생했습니다.")
                 .build();
     }
@@ -35,7 +36,7 @@ public class ChatMessageErrorResponse {
                 .originalMessage(originalMessage)
                 .error(error)
                 .errorCode(errorCode)
-                .failedAt(LocalDateTime.now())
+                .failedAt(SeoulTimeUtil.now())
                 .details(details)
                 .build();
     }

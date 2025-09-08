@@ -16,10 +16,11 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomAccount,
 
     @Modifying
     @Transactional
-    @Query("UPDATE ChatRoomAccount crm SET crm.lastMemberReadTime = CURRENT_TIMESTAMP " +
-            "WHERE crm.roomId = :roomId AND crm.accountEmail = :memberId")
+    @Query("UPDATE ChatRoomAccount crm SET crm.lastMemberReadTime = :currentTime " +
+            "WHERE crm.roomId = :roomId AND crm.accountEmail = :accountEmail")
     int updateLastReadTime(@Param("roomId") String roomId,
-                           @Param("memberId") String memberId);
+                           @Param("accountEmail") String accountEmail,
+                           @Param("currentTime") java.time.LocalDateTime currentTime);
 
     @Query(value = """
         SELECT crm1.room_id
