@@ -503,10 +503,48 @@ public class RedisMessageBroker implements MessageListener {
         try {
             String message = objectMapper.writeValueAsString(payload);
             redisTemplate.convertAndSend(channel, message);
-            log.info("[RedisMessageBroker] 단순 메시지 발행 완료: channel={}, message={}", channel, message);
+            log.info("[RedisMessageBroker] 단순 메시지 발행 완료: channel={}, instanceId={}", channel, instanceId);
         } catch (Exception e) {
             log.error("[RedisMessageBroker] 단순 메시지 발행 실패: channel={}, error={}", channel, e.getMessage(), e);
             throw new RuntimeException("단순 메시지 발행 실패", e);
+        }
+    }
+
+    /**
+     * 다른 서버 인스턴스에만 메시지 발행 (자신은 제외)
+     * 
+     * @param channel Redis 채널
+     * @param payload 메시지 내용
+     */
+    public void publishToOtherInstances(String channel, Object payload) {
+        try {
+            String message = objectMapper.writeValueAsString(payload);
+            
+            // 메시지에 발행자 정보 추가 (자신 제외를 위해)
+            String messageWithSender = addSenderInfo(message);
+            
+            redisTemplate.convertAndSend(channel, messageWithSender);
+            log.info("[RedisMessageBroker] 다른 인스턴스에 메시지 발행 완료: channel={}, sender={}", channel, instanceId);
+        } catch (Exception e) {
+            log.error("[RedisMessageBroker] 다른 인스턴스 메시지 발행 실패: channel={}, error={}", channel, e.getMessage(), e);
+            throw new RuntimeException("다른 인스턴스 메시지 발행 실패", e);
+        }
+    }
+
+    /**
+     * 메시지에 발행자 정보 추가
+     * 
+     * @param message 원본 메시지
+     * @return 발행자 정보가 포함된 메시지
+     */
+    private String addSenderInfo(String message) {
+        try {
+            // JSON 메시지에 발행자 정보 추가
+            String senderInfo = String.format("{\"senderInstanceId\":\"%s\",\"originalMessage\":%s}", instanceId, message);
+            return senderInfo;
+        } catch (Exception e) {
+            log.warn("[RedisMessageBroker] 발행자 정보 추가 실패, 원본 메시지 사용: {}", e.getMessage());
+            return message;
         }
     }
 
@@ -1235,6 +1273,23 @@ public class RedisMessageBroker implements MessageListener {
                 log.debug("[{}][RedisMessageBroker] 이중 직렬화 해제 완료: payloadLength={}", instanceId, payload.length());
             }
             
+            // 발행자 정보가 포함된 메시지인지 확인하고 자신이 발행한 메시지는 무시
+            if (payload.contains("\"senderInstanceId\"")) {
+                try {
+                    // 발행자 정보 추출
+                    String senderInstanceId = extractSenderInstanceId(payload);
+                    if (instanceId.equals(senderInstanceId)) {
+                        log.debug("[{}][RedisMessageBroker] 자신이 발행한 메시지 무시: channel={}", instanceId, channel);
+                        return; // 자신이 발행한 메시지는 처리하지 않음
+                    }
+                    // 원본 메시지 추출
+                    payload = extractOriginalMessage(payload);
+                    log.debug("[{}][RedisMessageBroker] 다른 인스턴스 메시지 처리: sender={}, channel={}", instanceId, senderInstanceId, channel);
+                } catch (Exception e) {
+                    log.warn("[{}][RedisMessageBroker] 발행자 정보 파싱 실패, 메시지 처리 계속: {}", instanceId, e.getMessage());
+                }
+            }
+            
             // 메시지 해시 생성
             String messageHash = generateMessageHash(channel, payload);
             
@@ -1381,11 +1436,22 @@ public class RedisMessageBroker implements MessageListener {
                 ChatRoomUpdateMessage dto =
                     objectMapper.readValue(messageBody, ChatRoomUpdateMessage.class);
                 messagingTemplate.convertAndSendToUser(userId, "/queue/chat/rooms", dto);
-                log.info("[{}][RedisMessageBroker] 개인 메시지 전송 완료 -> user={}, dest=/queue/chat/rooms", 
-                        instanceId, userId);
+                log.info("[{}][RedisMessageBroker] 개인 사이드바 업데이트 전송 완료 -> user={}, dest=/queue/chat/rooms, roomId={}", 
+                        instanceId, userId, dto.getRoomId());
             } catch (Exception e) {
                 log.warn("[{}][RedisMessageBroker] ChatRoomUpdateMessage 파싱 실패, 일반 메시지로 처리: {}", 
                         instanceId, e.getMessage());
+                
+                // 파싱 실패 시에도 로컬 메시지 핸들러를 통해 처리 시도
+                if (localMessageHandler != null) {
+                    try {
+                        String messageId = generateMessageId();
+                        localMessageHandler.handleLocalMessage(channel, messageBody, messageId);
+                        log.info("[{}][RedisMessageBroker] 로컬 메시지 핸들러를 통한 사이드바 업데이트 처리 완료", instanceId);
+                    } catch (Exception handlerException) {
+                        log.error("[{}][RedisMessageBroker] 로컬 메시지 핸들러 처리 실패: {}", instanceId, handlerException.getMessage());
+                    }
+                }
             }
             
         } catch (Exception e) {
@@ -1505,6 +1571,43 @@ public class RedisMessageBroker implements MessageListener {
         } catch (Exception e) {
             log.debug("[RedisMessageBroker] timeBasedId 파싱 실패: {}", timeBasedId);
             return timeBasedId; // 파싱 실패 시 원본 반환
+        }
+    }
+
+    /**
+     * 발행자 인스턴스 ID 추출
+     * 
+     * @param messageWithSender 발행자 정보가 포함된 메시지
+     * @return 발행자 인스턴스 ID
+     */
+    private String extractSenderInstanceId(String messageWithSender) {
+        try {
+            // JSON 파싱하여 senderInstanceId 추출
+            @SuppressWarnings("unchecked")
+            Map<String, Object> messageMap = objectMapper.readValue(messageWithSender, Map.class);
+            return (String) messageMap.get("senderInstanceId");
+        } catch (Exception e) {
+            log.debug("[RedisMessageBroker] 발행자 ID 추출 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 원본 메시지 추출
+     * 
+     * @param messageWithSender 발행자 정보가 포함된 메시지
+     * @return 원본 메시지
+     */
+    private String extractOriginalMessage(String messageWithSender) {
+        try {
+            // JSON 파싱하여 originalMessage 추출
+            @SuppressWarnings("unchecked")
+            Map<String, Object> messageMap = objectMapper.readValue(messageWithSender, Map.class);
+            Object originalMessage = messageMap.get("originalMessage");
+            return objectMapper.writeValueAsString(originalMessage);
+        } catch (Exception e) {
+            log.debug("[RedisMessageBroker] 원본 메시지 추출 실패: {}", e.getMessage());
+            return messageWithSender; // 추출 실패 시 원본 반환
         }
     }
 

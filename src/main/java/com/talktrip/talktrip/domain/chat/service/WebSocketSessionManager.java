@@ -25,6 +25,7 @@ public class WebSocketSessionManager {
     private final ObjectMapper objectMapper;
     private final RedisMessageBroker redisMessageBroker;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     // 사용자 세션 관리: accountEmail -> WebSocketSession Set
     private final ConcurrentMap<String, java.util.Set<WebSocketSession>> userSessions = new ConcurrentHashMap<>();
@@ -257,6 +258,114 @@ public class WebSocketSessionManager {
             
         } catch (Exception e) {
             log.error("메시지 직렬화 실패 - 채팅방: {}, 에러: {}", roomId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * ChatMessagePush DTO를 사용한 로컬 세션 메시지 전송 (실시간 응답성 보장)
+     * 
+     * @param roomId 채팅방 ID
+     * @param push ChatMessagePush DTO
+     */
+    public void sendChatMessagePushToLocalRoom(String roomId, com.talktrip.talktrip.domain.chat.dto.response.ChatMessagePush push) {
+        try {
+            String json = objectMapper.writeValueAsString(push);
+            
+            log.info("로컬 세션에 ChatMessagePush 전송 시작 - roomId: {}, messageId: {}", roomId, push.getMessageId());
+            
+            // 채팅방 멤버들에게 메시지 전송
+            userSessions.forEach((accountEmail, sessions) -> {
+                // 해당 사용자가 채팅방 멤버인지 확인
+                boolean isMember = chatRoomMemberRepository.existsByRoomIdAndAccountEmail(roomId, accountEmail);
+                
+                if (isMember) {
+                    java.util.Set<WebSocketSession> closedSessions = ConcurrentHashMap.newKeySet();
+                    
+                    sessions.forEach(session -> {
+                        if (session.isOpen()) {
+                            try {
+                                session.sendMessage(new org.springframework.web.socket.TextMessage(json));
+                                log.debug("채팅방 {}에 ChatMessagePush 전송 완료 - 사용자: {}", roomId, accountEmail);
+                            } catch (Exception e) {
+                                log.error("ChatMessagePush 전송 실패 - 사용자: {}, 에러: {}", accountEmail, e.getMessage(), e);
+                                closedSessions.add(session);
+                            }
+                        } else {
+                            closedSessions.add(session);
+                        }
+                    });
+                    
+                    // 닫힌 세션들 제거
+                    if (!closedSessions.isEmpty()) {
+                        sessions.removeAll(closedSessions);
+                        log.info("사용자 {}의 닫힌 세션 {}개 제거", accountEmail, closedSessions.size());
+                    }
+                } else {
+                    log.debug("사용자 {}는 채팅방 {}의 멤버가 아님", accountEmail, roomId);
+                }
+            });
+            
+            // 기존 방식과의 호환성을 위해 SimpMessagingTemplate도 사용
+            String dest = "/topic/chat/room/" + roomId;
+            messagingTemplate.convertAndSend(dest, push);
+            log.info("SimpMessagingTemplate으로도 전송 완료 - dest: {}", dest);
+            
+            log.info("로컬 세션 ChatMessagePush 전송 완료 - roomId: {}", roomId);
+            
+        } catch (Exception e) {
+            log.error("ChatMessagePush 직렬화 실패 - 채팅방: {}, 에러: {}", roomId, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 특정 사용자에게 사이드바 업데이트 메시지 전송
+     * 
+     * @param userEmail 사용자 이메일
+     * @param sidebarUpdate ChatRoomUpdateMessage DTO
+     */
+    public void sendSidebarUpdateToLocalUser(String userEmail, com.talktrip.talktrip.domain.chat.message.dto.ChatRoomUpdateMessage sidebarUpdate) {
+        try {
+            String json = objectMapper.writeValueAsString(sidebarUpdate);
+            
+            log.info("사용자 {}에게 사이드바 업데이트 전송 시작 - roomId: {}", userEmail, sidebarUpdate.getRoomId());
+            
+            // 해당 사용자의 WebSocket 세션들 조회
+            java.util.Set<WebSocketSession> sessions = userSessions.get(userEmail);
+            if (sessions != null && !sessions.isEmpty()) {
+                java.util.Set<WebSocketSession> closedSessions = ConcurrentHashMap.newKeySet();
+                
+                sessions.forEach(session -> {
+                    if (session.isOpen()) {
+                        try {
+                            session.sendMessage(new org.springframework.web.socket.TextMessage(json));
+                            log.debug("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
+                        } catch (Exception e) {
+                            log.error("사이드바 업데이트 전송 실패 - 사용자: {}, 에러: {}", userEmail, e.getMessage(), e);
+                            closedSessions.add(session);
+                        }
+                    } else {
+                        closedSessions.add(session);
+                    }
+                });
+                
+                // 닫힌 세션들 제거
+                if (!closedSessions.isEmpty()) {
+                    sessions.removeAll(closedSessions);
+                    log.info("사용자 {}의 닫힌 세션 {}개 제거", userEmail, closedSessions.size());
+                }
+            } else {
+                log.debug("사용자 {}의 활성 세션이 없음", userEmail);
+            }
+            
+            // 기존 방식과의 호환성을 위해 SimpMessagingTemplate도 사용
+            String dest = "/queue/chat/rooms";
+            messagingTemplate.convertAndSendToUser(userEmail, dest, sidebarUpdate);
+            log.info("SimpMessagingTemplate으로도 사이드바 업데이트 전송 완료 - user: {}, dest: {}", userEmail, dest);
+            
+            log.info("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
+            
+        } catch (Exception e) {
+            log.error("사이드바 업데이트 직렬화 실패 - 사용자: {}, 에러: {}", userEmail, e.getMessage(), e);
         }
     }
 
