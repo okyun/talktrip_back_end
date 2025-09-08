@@ -28,8 +28,8 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, String> {
                 SELECT cm1.message
                 FROM ChatMessage cm1
                 WHERE cm1.roomId = crt.roomId
-                  AND cm1.createdAt = (
-                      SELECT MAX(cm1b.createdAt)
+                  AND cm1.sequenceNumber = (
+                      SELECT MAX(cm1b.sequenceNumber)
                       FROM ChatMessage cm1b
                       WHERE cm1b.roomId = crt.roomId
                   )
