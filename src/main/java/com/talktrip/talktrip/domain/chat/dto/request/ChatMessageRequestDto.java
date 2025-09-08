@@ -30,7 +30,7 @@ public class ChatMessageRequestDto {
 
     }
 
-    public ChatMessage toEntity(String accountEmail) {
+    public ChatMessage toEntity(String accountEmail, Long sequenceNumber) {
         String uuid = UUID.randomUUID().toString().replace("-", "");
         String messageId = "mgs" + uuid.substring(0, 7);
 
@@ -39,6 +39,7 @@ public class ChatMessageRequestDto {
                 this.roomId,
                 accountEmail,
                 this.message,
+                sequenceNumber,
                 LocalDateTime.now()
         );
     }

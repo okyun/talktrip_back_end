@@ -65,6 +65,7 @@ public class ChatService {
     private final RedisMessageBroker redisMessageBroker;
     private final StringRedisTemplate stringRedisTemplate;
     private final WebSocketSessionManager webSocketSessionManager;
+    private final ChatMessageSequenceService chatMessageSequenceService;
 
 
     /**
@@ -96,8 +97,11 @@ public class ChatService {
             //     throw new AccessDeniedException("Not a member of this room");
             // }
 
-            // 1) DB 저장
-            ChatMessage entity = chatMessageRepository.save(dto.toEntity(sender));
+            // 1) Redis 기반 채팅방 시퀀스 생성 (원자적 연산)
+            Long sequenceNumber = chatMessageSequenceService.getNextSequence(dto.getRoomId());
+
+            // 2) DB 저장 (시퀀스 번호 포함)
+            ChatMessage entity = chatMessageRepository.save(dto.toEntity(sender, sequenceNumber));
             
             // 2) ChatRoom의 updatedAt 업데이트 (최신 메시지 시간으로)
             chatRoomRepository.updateUpdatedAt(dto.getRoomId(), entity.getCreatedAt());
@@ -124,17 +128,27 @@ public class ChatService {
                         : chatMessageRepository.countUnreadMessagesByRoomIdAndMemberId(dto.getRoomId(), email);
 
                 sidebars.add(ChatRoomUpdateMessage.builder()
+                        .accountEmail(email)                    // 수신자 이메일 (누가 받을지)
                         .roomId(dto.getRoomId())
                         .messageId(entity.getMessageId())
                         .message(entity.getMessage())
-                        .senderAccountEmail(sender)
+                        .senderAccountEmail(sender)             // 발신자 이메일
                         .createdAt(entity.getCreatedAt())
-                        .unreadCountForReceiver(unreadForThisUser)
+                        .notReadMessageCount(unreadForThisUser) // 읽지 않은 메시지 개수
+                        .receiverAccountEmail(email)            // 수신자 이메일 (중복이지만 필수 필드)
                         .updatedAt(Timestamp.valueOf(LocalDateTime.now()))
+                        .unreadCountForSender(0)                // 발신자는 항상 0
+                        .unreadCountForReceiver(unreadForThisUser)
                         .build());
             }
 
-            // 4) ❗ DB 커밋이 "성공한 뒤에만" Redis로 팬아웃
+            // 4) 로컬 세션에 즉시 전송 (실시간 응답성 보장)
+            sendToLocalSessions(dto.getRoomId(), push);
+            
+            // 5) 로컬 세션에 사이드바 업데이트 즉시 전송
+            sendSidebarUpdatesToLocalSessions(memberEmails, sidebars);
+
+            // 5) ❗ DB 커밋이 "성공한 뒤에만" Redis로 다른 서버 인스턴스에 브로드캐스트
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCommit() {
                     publishToRedis(dto, push, memberEmails, sidebars);
@@ -157,20 +171,72 @@ public class ChatService {
     }
 
     /**
+     * 로컬 WebSocket 세션에 즉시 메시지 전송 (실시간 응답성 보장)
+     * 
+     * @param roomId 채팅방 ID
+     * @param push ChatMessagePush DTO
+     */
+    private void sendToLocalSessions(String roomId, ChatMessagePush push) {
+        try {
+            log.info("로컬 세션에 즉시 메시지 전송 시작 - roomId: {}, messageId: {}", roomId, push.getMessageId());
+            
+            // WebSocketSessionManager를 통해 로컬 세션들에게 즉시 전송
+            webSocketSessionManager.sendChatMessagePushToLocalRoom(roomId, push);
+            
+            log.info("로컬 세션 즉시 전송 완료 - roomId: {}", roomId);
+            
+        } catch (Exception e) {
+            log.error("로컬 세션 즉시 전송 실패 - roomId: {}, error: {}", roomId, e.getMessage(), e);
+            // 로컬 전송 실패는 Redis 브로드캐스트로 보완되므로 예외를 던지지 않음
+        }
+    }
+
+    /**
+     * 로컬 세션에 사이드바 업데이트 즉시 전송
+     * 
+     * @param memberEmails 채팅방 멤버 이메일 목록
+     * @param sidebars 사이드바 업데이트 메시지 목록
+     */
+    private void sendSidebarUpdatesToLocalSessions(List<String> memberEmails, List<ChatRoomUpdateMessage> sidebars) {
+        try {
+            log.info("로컬 세션에 사이드바 업데이트 전송 시작 - 멤버 수: {}", memberEmails.size());
+            
+            for (int i = 0; i < memberEmails.size(); i++) {
+                String email = memberEmails.get(i);
+                ChatRoomUpdateMessage sidebar = sidebars.get(i);
+                
+                // WebSocketSessionManager를 통해 로컬 세션에 즉시 전송
+                webSocketSessionManager.sendSidebarUpdateToLocalUser(email, sidebar);
+            }
+            
+            log.info("로컬 세션 사이드바 업데이트 전송 완료");
+            
+        } catch (Exception e) {
+            log.error("로컬 세션 사이드바 업데이트 전송 실패: {}", e.getMessage(), e);
+            // 로컬 전송 실패는 Redis 브로드캐스트로 보완되므로 예외를 던지지 않음
+        }
+    }
+
+    /**
      * Redis로 채팅 메시지와 사이드바 업데이트를 발행합니다.
      * DB 커밋 후 실행되므로 예외가 발생해도 트랜잭션에 영향을 주지 않습니다.
+     * 다른 서버 인스턴스에만 브로드캐스트 (자신은 제외)
      */
     private void publishToRedis(ChatMessageRequestDto dto, ChatMessagePush push, 
                                List<String> memberEmails, List<ChatRoomUpdateMessage> sidebars) {
         try {
-            // 방 전체 브로드캐스트 → 모든 WS 서버가 이 채널을 구독 중
-            redisMessageBroker.publish("chat:room:" + dto.getRoomId(), push);
+            log.info("Redis 브로드캐스트 시작 - roomId: {}, 자신 제외", dto.getRoomId());
+            
+            // 방 전체 브로드캐스트 → 다른 서버 인스턴스들에만 전송 (자신은 제외)
+            redisMessageBroker.publishToOtherInstances("chat:room:" + dto.getRoomId(), push);
 
-            // 개인별 사이드바 업데이트 → 각 사용자 채널로 발행
+            // 개인별 사이드바 업데이트 → 다른 서버 인스턴스의 사용자들에게만 전송
             publishSidebarUpdates(memberEmails, sidebars);
             
+            log.info("Redis 브로드캐스트 완료 - roomId: {}", dto.getRoomId());
+            
         } catch (Exception e) {
-            log.error("Redis 발행 실패: {}", e.getMessage(), e);
+            log.error("Redis 브로드캐스트 실패: {}", e.getMessage(), e);
             // afterCommit에서는 예외를 던져도 트랜잭션이 이미 커밋되어 WebSocket 컨트롤러에서 잡히지 않음
             // 대신 로그만 남기고, 클라이언트는 메시지가 성공적으로 저장되었다고 생각할 수 있음
             // 실제 운영에서는 Redis 모니터링이나 알림 시스템을 통해 처리해야 함
@@ -178,13 +244,14 @@ public class ChatService {
     }
 
     /**
-     * 각 사용자별로 사이드바 업데이트 메시지를 Redis에 발행합니다.
+     * 각 사용자별로 사이드바 업데이트 메시지를 다른 서버 인스턴스에 발행합니다.
      */
     private void publishSidebarUpdates(List<String> memberEmails, List<ChatRoomUpdateMessage> sidebars) {
         for (int i = 0; i < memberEmails.size(); i++) {
             String email = memberEmails.get(i);
             ChatRoomUpdateMessage sidebar = sidebars.get(i);
-            redisMessageBroker.publish("chat:user:" + email, sidebar);
+            // 다른 서버 인스턴스의 사용자들에게만 전송 (자신은 제외)
+            redisMessageBroker.publishToOtherInstances("chat:user:" + email, sidebar);
         }
     }
 
@@ -350,20 +417,20 @@ public class ChatService {
         // 2) page size 정규화
         final int size = (limit == null || limit <= 0 || limit > 200) ? 50 : limit;
 
-        // 3) 정렬: 서버는 항상 최신→과거 (DESC)로 가져온다
-        var sort = Sort.by(Sort.Direction.DESC, "createdAt", "messageId");
+        // 3) 정렬: 서버는 항상 최신→과거 (DESC)로 가져온다 - 시퀀스 기반
+        var sort = Sort.by(Sort.Direction.DESC, "sequenceNumber", "createdAt", "messageId");
         var pageable = PageRequest.of(0, size, sort);
 
-        // 4) 메시지 조회 (첫 진입 vs 커서 이전)
+        // 4) 메시지 조회 (첫 진입 vs 커서 이전) - 시퀀스 기반
         List<ChatMessage> entities;
         if (cursor == null || cursor.isBlank()) {
             // 첫 페이지
             entities = chatMessageRepository.findFirstPage(roomId, pageable);
         } else {
-            // 커서 이전 페이지
-            var c = CursorUtil.decode(cursor); // createdAt + messageId(String)
+            // 커서 이전 페이지 - 시퀀스 기반
+            var c = CursorUtil.decode(cursor); // sequenceNumber + createdAt + messageId
             entities = chatMessageRepository.findSliceBefore(
-                    roomId, c.createdAt(), c.messageId(), pageable
+                    roomId, Long.parseLong(c.messageId()), pageable // messageId 자리에 sequenceNumber 저장
             );
         }
 
@@ -376,33 +443,17 @@ public class ChatService {
                 .toList();
 
 
-        // 7) nextCursor/hasNext 계산
+        // 7) nextCursor/hasNext 계산 - 시퀀스 기반
         String nextCursor = null;
         boolean hasNext = false;
         if (!entities.isEmpty()) {
             var last = entities.get(entities.size() - 1);
-            nextCursor = CursorUtil.encode(last.getCreatedAt(), last.getMessageId());
+            nextCursor = CursorUtil.encode(last.getCreatedAt(), last.getSequenceNumber().toString());
             hasNext = (entities.size() == size); // 꽉 찼으면 더 있음으로 간주
         }
 
         return SliceResponse.of(items, hasNext ? nextCursor : null, hasNext);
     }
-
-    // 기존 시그니처 유지용(호출부 점진 교체)
-//    @Transactional
-//    public SliceResponse<ChatMemberRoomWithMessageDto> getRoomChattingHistoryAndMarkAsRead(
-//            String roomId, String accountEmail
-//    ) {
-//        return getRoomChattingHistoryAndMarkAsRead(roomId, accountEmail, 50, null);
-//    }
-
-//    public void updateLastReadTime(String roomId, String accountEmail) {
-//        chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail);
-//        // Redis로 업데이트 알림 발행 - roomId 포함하여 생성
-//        ChatUpdateMessage updateMessage = new ChatUpdateMessage(accountEmail);
-//        messagingTemplate.convertAndSend("/topic/chat/room/" +roomId+ "/update", updateMessage);
-//    }
-    
     /**
      * 채팅방 입장 또는 생성 - 관련 캐시 무효화 및 WebSocket 세션 갱신
      * 
@@ -450,6 +501,8 @@ public class ChatService {
 
         chatRoomMemberRepository.save(buyerMember);
         chatRoomMemberRepository.save(sellerMember);
+
+        // Redis 시퀀스는 자동으로 0부터 시작하므로 별도 초기화 불필요
 
         // 생성자(구매자) 세션 갱신 - 현재 온라인 상태인 경우 새 채팅방에 참가시킴
         if (webSocketSessionManager.isUserOnlineLocally(accountEmail)) {

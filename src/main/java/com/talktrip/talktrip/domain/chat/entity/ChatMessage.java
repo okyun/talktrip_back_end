@@ -14,6 +14,10 @@ import java.time.LocalDateTime;
         name = "chatting_message_history_tab",
         indexes = {
                 @Index(
+                        name = "idx_msg_room_sequence_desc",
+                        columnList = "room_id, sequence_number DESC"
+                ),
+                @Index(
                         name = "idx_msg_room_created_id_desc",
                         columnList = "room_id, created_at, message_id"
                 )
@@ -37,6 +41,9 @@ public class ChatMessage {
     @Column(name = "message", nullable = false)
     private String message;
 
+    @Column(name = "sequence_number", nullable = false)
+    private Long sequenceNumber;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -51,11 +58,12 @@ public class ChatMessage {
             insertable = false, updatable = false)
     private Member senderRef;   // 프로필 필요할 때만 사용
 
-    public ChatMessage(String messageId, String roomId, String accountEmail, String message, LocalDateTime createdAt) {
+    public ChatMessage(String messageId, String roomId, String accountEmail, String message, Long sequenceNumber, LocalDateTime createdAt) {
         this.messageId = messageId;
         this.roomId = roomId;
         this.accountEmail = accountEmail;
         this.message = message;
+        this.sequenceNumber = sequenceNumber;
         this.createdAt = createdAt;
     }
 

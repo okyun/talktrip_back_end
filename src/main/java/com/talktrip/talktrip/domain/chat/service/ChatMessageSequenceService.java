@@ -13,7 +13,7 @@ public class ChatMessageSequenceService {
     private final RedisTemplate<String,Object> redisTemplate;
     private final String prefix = "chat:sequence";
 
-    private Long getNextSequence(String roomId){
+    private Long getNextSequenceInternal(String roomId){
         String key = prefix+":"+roomId;
         
         // Redis의 원자적 증가 연산을 사용하여 메시지 순서를 보장
@@ -21,6 +21,23 @@ public class ChatMessageSequenceService {
         
         // 만약 increment 결과가 null이면 1L을 반환
         return sequence != null ? sequence : 1L;
+    }
+
+    /**
+     * 채팅방의 다음 시퀀스 번호를 원자적으로 생성합니다.
+     * 
+     * @param roomId 채팅방 ID
+     * @return 다음 시퀀스 번호
+     */
+    public Long getNextSequence(String roomId) {
+        try {
+            Long sequence = getNextSequenceInternal(roomId);
+            log.debug("채팅방 {} 시퀀스 생성: {}", roomId, sequence);
+            return sequence;
+        } catch (Exception e) {
+            log.error("채팅방 {} 시퀀스 생성 실패: {}", roomId, e.getMessage(), e);
+            throw new RuntimeException("메시지 순서 생성에 실패했습니다: " + e.getMessage());
+        }
     }
 
     // ✅ 원자적 연산: 동시에 여러 메시지가 들어와도 순서 보장

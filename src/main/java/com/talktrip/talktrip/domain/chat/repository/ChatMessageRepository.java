@@ -105,33 +105,29 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, String
     );
 
 
-    // 첫 페이지(커서 없음): 최신 50개
+    // 첫 페이지(커서 없음): 최신 50개 - 시퀀스 기반 정렬
     @Query("""
         select m
         from ChatMessage m
         where m.roomId = :roomId
-        order by m.createdAt desc, m.messageId desc
+        order by m.sequenceNumber desc, m.createdAt desc, m.messageId desc
     """)
     List<ChatMessage> findFirstPage(
             @Param("roomId") String roomId,
             PageRequest pageable
     );
 
-    // 커서 이전(더 과거) 50개: (createdAt, messageId) 복합 비교
+    // 커서 이전(더 과거) 50개: 시퀀스 기반 정렬
     @Query("""
     select m
     from ChatMessage m
     where m.roomId = :roomId
-      and (
-            m.createdAt < :cursorCreatedAt
-         or (m.createdAt = :cursorCreatedAt and m.messageId < :cursorMessageId)
-      )
-    order by m.createdAt desc, m.messageId desc
+      and m.sequenceNumber < :cursorSequenceNumber
+    order by m.sequenceNumber desc, m.createdAt desc, m.messageId desc
 """)
     List<ChatMessage> findSliceBefore(
             @Param("roomId") String roomId,
-            @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
-            @Param("cursorMessageId") String cursorMessageId, // ✅ String으로 변경
+            @Param("cursorSequenceNumber") Long cursorSequenceNumber,
             PageRequest pageable
     );
 }
