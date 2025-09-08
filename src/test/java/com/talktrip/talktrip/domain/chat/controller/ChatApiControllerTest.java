@@ -147,7 +147,7 @@ class ChatApiControllerTest {
         // Given
         String roomId = "ROOM_001";
         ChatMemberRoomWithMessageDto mockMessage = new ChatMemberRoomWithMessageDto(
-                "MSG_001", "ROOM_001", "user1@example.com", "안녕하세요", LocalDateTime.now(), null
+                "MSG_001", "ROOM_001", "user1@example.com", "안녕하세요", 1L, LocalDateTime.now(), null
         );
         
         SliceResponse<ChatMemberRoomWithMessageDto> mockResponse = new SliceResponse<>(

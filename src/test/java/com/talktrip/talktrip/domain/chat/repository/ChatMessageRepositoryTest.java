@@ -3,6 +3,7 @@ package com.talktrip.talktrip.domain.chat.repository;
 import com.talktrip.talktrip.domain.chat.entity.ChatMessage;
 import com.talktrip.talktrip.domain.chat.entity.ChatRoom;
 import com.talktrip.talktrip.domain.chat.entity.ChatRoomAccount;
+import com.talktrip.talktrip.domain.chat.enums.RoomType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -266,8 +267,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest = PageRequest.of(0, 2);
         List<ChatMessage> result = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest
         );
 
@@ -459,8 +459,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest = PageRequest.of(0, 50);
         List<ChatMessage> result = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest
         );
 
@@ -509,8 +508,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest = PageRequest.of(0, 50);
         List<ChatMessage> result = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest
         );
 
@@ -557,8 +555,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest = PageRequest.of(0, 20);
         List<ChatMessage> result = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest
         );
 
@@ -593,8 +590,7 @@ class ChatMessageRepositoryTest {
         PageRequest secondPageRequest = PageRequest.of(0, 20);
         List<ChatMessage> secondPageResult = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                lastMessageFromFirstPage.getCreatedAt(),
-                lastMessageFromFirstPage.getMessageId(),
+                lastMessageFromFirstPage.getSequenceNumber(),
                 secondPageRequest
         );
 
@@ -630,8 +626,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest = PageRequest.of(0, 10);
         List<ChatMessage> result = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest
         );
 
@@ -670,17 +665,8 @@ class ChatMessageRepositoryTest {
 
     private ChatMessage createChatMessage(String messageId, String senderEmail, String content, LocalDateTime createdAt, String roomId) {
         String fullMessageId = messageId + "_" + UUID.randomUUID().toString().substring(0, 8);
-        return new ChatMessage(fullMessageId, roomId, senderEmail, content, createdAt);
+        return new ChatMessage(fullMessageId, roomId, senderEmail, content, 1L, createdAt);
     }
-
-//    private void updateLastReadTime(String userEmail, LocalDateTime readTime) {
-//        entityManager.getEntityManager()
-//                .createNativeQuery("UPDATE chatting_room_account_tab SET last_member_read_time = :readTime WHERE room_id = :roomId AND account_email = :email")
-//                .setParameter("readTime", readTime)
-//                .setParameter("roomId", testRoomId)
-//                .setParameter("email", userEmail)
-//                .executeUpdate();
-//    }
 
     private String createAnotherRoom() {
         String anotherRoomId = "ANOTHER_ROOM_" + UUID.randomUUID().toString().substring(0, 8);
@@ -759,8 +745,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest49 = PageRequest.of(0, 49);
         List<ChatMessage> result49 = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest49
         );
         assertThat(result49).hasSize(49);
@@ -769,8 +754,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest50 = PageRequest.of(0, 50);
         List<ChatMessage> result50 = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest50
         );
         assertThat(result50).hasSize(30); // 커서 이전 메시지는 30개만 존재
@@ -779,8 +763,7 @@ class ChatMessageRepositoryTest {
         PageRequest pageRequest51 = PageRequest.of(0, 51);
         List<ChatMessage> result51 = chatMessageRepository.findSliceBefore(
                 testRoomId,
-                cursorMessage.getCreatedAt(),
-                cursorMessage.getMessageId(),
+                cursorMessage.getSequenceNumber(),
                 pageRequest51
         );
         assertThat(result51).hasSize(30); // 최대 메시지는 30개만 반환
@@ -794,9 +777,18 @@ class ChatMessageRepositoryTest {
             String messageId = "MSG_" + i;
             String content = "메시지 " + i;
             String senderEmail = (i % 2 == 0) ? testUser2Email : testUser1Email;
-            messages.add(createChatMessage(messageId, senderEmail, content, createdAt));
+            messages.add(createChatMessageWithSequence(messageId, senderEmail, content, (long) i, createdAt));
         }
         return messages;
+    }
+
+    private ChatMessage createChatMessageWithSequence(String messageId, String senderEmail, String content, Long sequenceNumber, LocalDateTime createdAt) {
+        return createChatMessageWithSequence(messageId, senderEmail, content, sequenceNumber, createdAt, testRoomId);
+    }
+
+    private ChatMessage createChatMessageWithSequence(String messageId, String senderEmail, String content, Long sequenceNumber, LocalDateTime createdAt, String roomId) {
+        String fullMessageId = messageId + "_" + UUID.randomUUID().toString().substring(0, 8);
+        return new ChatMessage(fullMessageId, roomId, senderEmail, content, sequenceNumber, createdAt);
     }
 
 

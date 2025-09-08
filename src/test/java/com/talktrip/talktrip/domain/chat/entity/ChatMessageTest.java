@@ -20,7 +20,7 @@ class ChatMessageTest {
         LocalDateTime createdAt = LocalDateTime.now();
 
         // When
-        ChatMessage chatMessage = new ChatMessage(messageId, roomId, accountEmail, messageContent, createdAt);
+        ChatMessage chatMessage = new ChatMessage(messageId, roomId, accountEmail, messageContent, 1L, createdAt);
 
         // Then
         assertThat(chatMessage.getMessageId()).isEqualTo(messageId);
@@ -41,7 +41,7 @@ class ChatMessageTest {
         LocalDateTime createdAt = LocalDateTime.now();
 
         // When
-        ChatMessage chatMessage = new ChatMessage(messageId, roomId, accountEmail, messageContent, createdAt);
+        ChatMessage chatMessage = new ChatMessage(messageId, roomId, accountEmail, messageContent, 1L, createdAt);
 
         // Then
         assertThat(chatMessage.getRoomRef()).isNull();

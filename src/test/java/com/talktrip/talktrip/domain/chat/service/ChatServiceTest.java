@@ -238,7 +238,7 @@ class ChatServiceTest {
         when(stringRedisTemplate.opsForValue().get("health_check")).thenReturn("ok");
         
         // 메시지 저장 성공
-        ChatMessage savedMessage = new ChatMessage("MSG_001", "ROOM_001", "test@example.com", "정상 메시지", LocalDateTime.now());
+        ChatMessage savedMessage = new ChatMessage("MSG_001", "ROOM_001", "test@example.com", "정상 메시지", 1L, LocalDateTime.now());
         when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(savedMessage);
         
         // 방 멤버 조회 성공
@@ -473,6 +473,7 @@ class ChatServiceTest {
                 "ROOM_001",
                 "test@example.com",
                 "테스트 메시지",
+                1L,
                 LocalDateTime.now()
         );
 
@@ -584,6 +585,7 @@ class ChatServiceTest {
                 "ROOM_001",
                 "test@example.com",
                 "두 번째 메시지",
+                2L,
                 LocalDateTime.now()
         );
 
@@ -592,7 +594,7 @@ class ChatServiceTest {
         LocalDateTime cursorTime = LocalDateTime.of(2025, 1, 27, 10, 0, 0);
         String cursor = CursorUtil.encode(cursorTime, "MSG_001");
 
-        when(chatMessageRepository.findSliceBefore(eq("ROOM_001"), any(LocalDateTime.class), anyString(), any(PageRequest.class)))
+        when(chatMessageRepository.findSliceBefore(eq("ROOM_001"), any(Long.class), any(PageRequest.class)))
                 .thenReturn(mockMessages);
         when(chatRoomMemberRepository.updateLastReadTime("ROOM_001", "test@example.com")).thenReturn(1);
 
@@ -602,7 +604,7 @@ class ChatServiceTest {
 
         // Then
         assertThat(result.items()).hasSize(1);
-        verify(chatMessageRepository).findSliceBefore(eq("ROOM_001"), any(LocalDateTime.class), anyString(), any(PageRequest.class));
+        verify(chatMessageRepository).findSliceBefore(eq("ROOM_001"), any(Long.class), any(PageRequest.class));
     }
 
     @Test
@@ -614,6 +616,7 @@ class ChatServiceTest {
                 "ROOM_001",
                 "test@example.com",
                 "첫 번째 메시지",
+                1L,
                 LocalDateTime.now()
         );
 
@@ -622,6 +625,7 @@ class ChatServiceTest {
                 "ROOM_001",
                 "test@example.com",
                 "두 번째 메시지",
+                2L,
                 LocalDateTime.now()
         );
 
@@ -649,6 +653,7 @@ class ChatServiceTest {
                 "ROOM_001",
                 "test@example.com",
                 "메시지",
+                1L,
                 LocalDateTime.now()
         );
 
@@ -887,7 +892,7 @@ class ChatServiceTest {
         when(stringRedisTemplate.opsForValue().get("health_check")).thenReturn("ok");
         
         // 메시지 저장 성공
-        ChatMessage savedMessage = new ChatMessage("MSG_001", "ROOM_001", "test@example.com", "정상 메시지", LocalDateTime.now());
+        ChatMessage savedMessage = new ChatMessage("MSG_001", "ROOM_001", "test@example.com", "정상 메시지", 1L, LocalDateTime.now());
         when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(savedMessage);
         
         // 방 멤버 조회 성공
@@ -904,7 +909,7 @@ class ChatServiceTest {
         // 정상적인 메시지 처리 시 예외가 발생하지 않아야 함
         assertThatCode(() -> {
             // 트랜잭션 동기화 문제를 우회하기 위해 직접 메시지 저장 로직만 테스트
-            ChatMessage entity = chatMessageRepository.save(mockMessageDto.toEntity(mockPrincipal.getName()));
+            ChatMessage entity = chatMessageRepository.save(mockMessageDto.toEntity(mockPrincipal.getName(), 1L));
             chatRoomRepository.updateUpdatedAt(mockMessageDto.getRoomId(), entity.getCreatedAt());
             
             // Redis 발행 로직 테스트

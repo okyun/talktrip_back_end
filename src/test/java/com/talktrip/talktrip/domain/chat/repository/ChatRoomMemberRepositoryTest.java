@@ -2,6 +2,7 @@ package com.talktrip.talktrip.domain.chat.repository;
 
 import com.talktrip.talktrip.domain.chat.entity.ChatRoom;
 import com.talktrip.talktrip.domain.chat.entity.ChatRoomAccount;
+import com.talktrip.talktrip.domain.chat.enums.RoomType;
 import com.talktrip.talktrip.global.config.QuerydslConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +34,7 @@ class ChatRoomMemberRepositoryTest {
     private EntityManager entityManager;
 
     private String testRoomId1;
-    private String testRoomId2;
+    private String  testRoomId2;
     private String testUser1Email;
     private String testUser2Email;
     private String testUser3Email;

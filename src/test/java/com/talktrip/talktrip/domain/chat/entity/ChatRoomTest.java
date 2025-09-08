@@ -1,5 +1,6 @@
 package com.talktrip.talktrip.domain.chat.entity;
 
+import com.talktrip.talktrip.domain.chat.enums.RoomType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

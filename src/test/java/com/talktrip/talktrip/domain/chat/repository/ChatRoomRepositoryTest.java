@@ -1,6 +1,7 @@
 package com.talktrip.talktrip.domain.chat.repository;
 
 import com.talktrip.talktrip.domain.chat.entity.ChatRoom;
+import com.talktrip.talktrip.domain.chat.enums.RoomType;
 import com.talktrip.talktrip.global.config.QuerydslConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,7 +43,6 @@ class ChatRoomRepositoryTest {
         ChatRoom chatRoom1 = ChatRoom.builder()
                 .roomId(roomId1)
                 .title("Chat Room 1")
-
                 .productId(1)
                 .roomType(RoomType.DIRECT)
                 .build();
@@ -50,7 +50,6 @@ class ChatRoomRepositoryTest {
         ChatRoom chatRoom2 = ChatRoom.builder()
                 .roomId(roomId2)
                 .title("Chat Room 2")
-               
                 .productId(2)
                 .roomType(RoomType.GROUP)
                 .build();
