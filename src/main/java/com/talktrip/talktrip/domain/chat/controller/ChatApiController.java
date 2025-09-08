@@ -40,10 +40,13 @@ public class ChatApiController {
 
     @Operation(summary = "내 채팅 목록 (전체 - 기존 호환성)")
     @GetMapping("/me/chatRooms/all")
-    public List<ChatRoomDTO> getAllMyChats(Principal principal) {
+    public List<ChatRoomDTO> getAllMyChats(
+            Principal principal,
+            @RequestParam(required = false) String roomType) {
         String accountEmail = principal.getName();
-        return chatService.getAllRooms(accountEmail);
+        return chatService.getAllRooms(accountEmail, roomType);
     }
+
     @Operation(summary = "채팅방 메시지 조회 (includeMessages=true: 첫 페이지, false: 무한스크롤)")
     @GetMapping("/me/chatRooms/{roomId}/messages")
     public SliceResponse<ChatMemberRoomWithMessageDto> getRoomMessages(
@@ -79,6 +82,13 @@ public class ChatApiController {
         String roomId = chatService.enterOrCreateRoom(principal,chatRoomRequestDto);
         return ResponseEntity.ok(new ChatRoomResponseDto(roomId));
     }
+    @Operation(summary = "채팅방 읽음 처리 (notReadMessageCount 초기화)")
+    @PatchMapping("/me/chatRooms/{roomId}/markAsRead")
+    public ResponseEntity<Void> markRoomAsRead(Principal principal, @PathVariable String roomId) {
+        chatService.markRoomAsRead(principal.getName(), roomId);
+        return ResponseEntity.noContent().build(); // 204 No Content
+    }
+
     @Operation(summary = "채팅방 나가기(삭제 처리)")
     @PatchMapping("/me/chatRooms/{roomId}")
     public ResponseEntity<Void> leaveChatRoom(Principal principal,@PathVariable String roomId) {

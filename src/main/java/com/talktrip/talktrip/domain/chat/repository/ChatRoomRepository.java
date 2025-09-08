@@ -33,6 +33,8 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, String> {
                       FROM ChatMessage cm1b
                       WHERE cm1b.roomId = crt.roomId
                   )
+                ORDER BY cm1.createdAt DESC, cm1.messageId DESC
+                LIMIT 1
             ), '') AS lastMessage,
         (
             SELECT COUNT(cm2)
@@ -40,6 +42,7 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, String> {
             WHERE cm2.roomId = crt.roomId
               AND cm2.createdAt > COALESCE(crmt.lastMemberReadTime, '1970-01-01 00:00:00')
               AND cm2.accountEmail <> :memberId
+              AND cm2.accountEmail IS NOT NULL
         ) AS notReadMessageCount,
         crt.roomType
     )

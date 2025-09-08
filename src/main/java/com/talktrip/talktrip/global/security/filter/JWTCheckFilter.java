@@ -130,11 +130,10 @@ public class JWTCheckFilter extends OncePerRequestFilter {
                 uri.startsWith("/api/products") ||
                 uri.startsWith("/api/orders")||
                 uri.startsWith("/api/chat/") ||  // 채팅 API 제외
-                uri.startsWith("/api/alarm/")  // 알림 API 제외 (개발 단계)
-
+                uri.startsWith("/api/alarm/") ||  // 알림 API 제외 (개발 단계)
                 // WebSocket 관련 모든 경로 허용
                 // 핸드셰이크 공개 유지(옵션 A/B-1 선택 시)
-                || uri.startsWith("/ws")
+                uri.startsWith("/ws")
                 || uri.startsWith("/ws-info")
                 || uri.startsWith("/sockjs-node");
     }

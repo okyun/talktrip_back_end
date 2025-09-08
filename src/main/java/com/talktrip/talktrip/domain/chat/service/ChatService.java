@@ -580,4 +580,60 @@ public class ChatService {
                 participants
         );
     }
+
+    /**
+     * 채팅방 읽음 처리 (notReadMessageCount 초기화)
+     * 
+     * 그룹채팅과 1:1 채팅 모두에서 올바르게 작동하도록 구현
+     * - 그룹채팅: 각 사용자별로 개별적인 읽음 처리
+     * - 1:1 채팅: 상대방의 메시지만 카운트에서 제외
+     * 
+     * @param accountEmail 사용자 이메일
+     * @param roomId 채팅방 ID
+     * @throws AccessDeniedException 사용자가 해당 채팅방의 멤버가 아닌 경우
+     */
+    @Transactional
+    public void markRoomAsRead(String accountEmail, String roomId) {
+        // 1) 사용자가 해당 채팅방의 멤버인지 권한 검사
+        boolean isMember = chatRoomMemberRepository.existsByRoomIdAndAccountEmail(roomId, accountEmail);
+        if (!isMember) {
+            throw new AccessDeniedException("Not a member of this room: " + roomId);
+        }
+
+        // 2) 읽음 처리 (lastMemberReadTime 갱신)
+        // 그룹채팅과 1:1 채팅 모두에서 각 사용자별로 개별적인 읽음 처리
+        int updatedRows = chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail);
+        
+        if (updatedRows == 0) {
+            log.warn("읽음 처리 실패 - 사용자: {}, 채팅방: {}", accountEmail, roomId);
+        } else {
+            log.info("읽음 처리 완료 - 사용자: {}, 채팅방: {}, 업데이트된 행: {}", accountEmail, roomId, updatedRows);
+        }
+    }
+
+    /**
+     * 모든 채팅방 목록 조회 (roomType 필터 지원)
+     * 
+     * @param accountEmail 사용자 이메일
+     * @param roomType 필터링할 채팅방 타입 (DIRECT, GROUP, null=전체)
+     * @return 채팅방 목록
+     */
+    public List<ChatRoomDTO> getAllRooms(String accountEmail, String roomType) {
+        List<ChatRoomDTO> allRooms = chatRoomRepository.findRoomsWithLastMessageByMemberId(accountEmail);
+        
+        if (roomType == null || roomType.isEmpty()) {
+            return allRooms;
+        }
+        
+        try {
+            com.talktrip.talktrip.domain.chat.enums.RoomType filterType = 
+                com.talktrip.talktrip.domain.chat.enums.RoomType.valueOf(roomType.toUpperCase());
+            return allRooms.stream()
+                    .filter(room -> room.getRoomType() == filterType)
+                    .collect(java.util.stream.Collectors.toList());
+        } catch (IllegalArgumentException e) {
+            log.warn("잘못된 roomType: {}, 전체 목록 반환", roomType);
+            return allRooms;
+        }
+    }
 }
