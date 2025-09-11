@@ -72,5 +72,9 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
                     request.getURI().getPath(),
                     exception == null ? "none" : exception.getClass().getSimpleName());
         }
+        if (exception != null){
+            log.error("websocket HandShakerInterception exception:",exception);
+
+        }
     }
 }
