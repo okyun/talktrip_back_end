@@ -1,4 +1,4 @@
-package com.talktrip.talktrip.global.logger;
+package com.talktrip.talktrip.global.webSocket;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

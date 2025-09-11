@@ -1,7 +1,6 @@
-package com.talktrip.talktrip.global.config;
+package com.talktrip.talktrip.global.webSocket;
 
-import com.talktrip.talktrip.global.interceptor.JwtStompChannelInterceptor;
-import com.talktrip.talktrip.global.interceptor.WebSocketHandshakeInterceptor;
+import com.talktrip.talktrip.global.webSocket.stomp.JwtStompChannelInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
@@ -41,7 +40,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .setHeartbeatTime(25000)
                 .setDisconnectDelay(5000)
                 .setHttpMessageCacheSize(1000)
-                .setStreamBytesLimit(512 * 1024)
+                .setStreamBytesLimit(2 * 1024 * 1024)  // 2MB로 증가
                 .setHttpMessageCacheSize(1000)
                 .setSessionCookieNeeded(false);
     }
@@ -57,10 +56,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
-        registration.setMessageSizeLimit(128 * 1024);
-        registration.setSendBufferSizeLimit(512 * 1024);
-        registration.setSendTimeLimit(20000);
-        registration.setTimeToFirstMessage(30000);
+        // 큰 메시지 처리 정책 설정
+        registration.setMessageSizeLimit(1024 * 1024);        // 1MB - 단일 메시지 최대 크기
+        registration.setSendBufferSizeLimit(2 * 1024 * 1024); // 2MB - 전송 버퍼 크기
+        registration.setSendTimeLimit(30000);                 // 30초 - 전송 시간 제한
+        registration.setTimeToFirstMessage(30000);            // 30초 - 첫 메시지까지 대기 시간
+        
+        // 큰 메시지 자동 분할 처리 (Raw WebSocket의 supportsPartialMessages(true)와 동일)
+        // STOMP는 자동으로 큰 메시지를 처리하므로 별도 DecoratorFactory 불필요
     }
 
 }

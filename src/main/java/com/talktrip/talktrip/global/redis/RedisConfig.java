@@ -1,4 +1,4 @@
-package com.talktrip.talktrip.global.config;
+package com.talktrip.talktrip.global.redis;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
