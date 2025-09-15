@@ -130,4 +130,12 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, String
             @Param("cursorSequenceNumber") Long cursorSequenceNumber,
             PageRequest pageable
     );
+
+    // 특정 채팅방의 마지막 sequenceNumber 조회
+    @Query("""
+        SELECT COALESCE(MAX(m.sequenceNumber), 0)
+        FROM ChatMessage m
+        WHERE m.roomId = :roomId
+    """)
+    Long findMaxSequenceNumberByRoomId(@Param("roomId") String roomId);
 }
