@@ -123,6 +123,9 @@ public class JWTCheckFilter extends OncePerRequestFilter {
                 uri.startsWith("/swagger-resources") ||
                 uri.startsWith("/webjars") ||
 
+                // Actuator 엔드포인트 허용
+                uri.startsWith("/api/actuator/") ||
+                uri.startsWith("/actuator/") ||
                 // 상품 조회 및 AI 검색, 리뷰 목록은 비로그인 허용
                 (uri.startsWith("/api/products") && !uri.contains("/like")) ||
                 uri.startsWith("/api/ai-search") ||
