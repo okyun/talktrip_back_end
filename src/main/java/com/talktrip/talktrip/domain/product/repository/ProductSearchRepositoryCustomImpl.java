@@ -1,3 +1,4 @@
+// (전체 클래스 그대로 교체)
 package com.talktrip.talktrip.domain.product.repository;
 
 import com.querydsl.core.BooleanBuilder;
@@ -39,6 +40,11 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
     private static final String ALL_COUNTRIES = "전체";
     private static final Pattern WS = Pattern.compile("\\s+");
 
+    // 후보 상/하한 — 필요 시 조정
+    private static final int MIN_PRELIMIT = 800;
+    private static final int MAX_PRELIMIT = 6000;
+
+    // ---------- token utils ----------
     private static List<String> tokensOf(String keyword) {
         if (keyword == null || keyword.isBlank()) return List.of();
         return WS.splitAsStream(keyword.trim()).toList();
@@ -53,7 +59,6 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         }
         return false;
     }
-
     private static List<String> sanitizeTokens(List<String> tokens) {
         if (tokens == null || tokens.isEmpty()) return List.of();
         return tokens.stream()
@@ -68,21 +73,23 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
                 .limit(5)
                 .toList();
     }
-
     private static String toEscapedContainsPattern(String token) {
         String escaped = token.replace("!", "!!").replace("%", "!%").replace("_", "!_");
         return "%" + escaped + "%";
     }
-
     private static String buildBooleanFulltextQuery(List<String> tokens) {
         if (tokens == null || tokens.isEmpty()) return "";
         StringBuilder sb = new StringBuilder();
         for (String t : tokens) {
             if (t == null || t.isBlank()) continue;
-            sb.append('+').append(t);
-            sb.append(' ');
+            sb.append('+').append(t).append(' ');
         }
         return sb.toString().trim();
+    }
+
+    // **CJK면 무조건 FTS 비선호(빈도 높음/짧은 토큰도 포함)**
+    private static boolean cjkLikelyExpensiveForBoolean(String token) {
+        return token != null && !token.isBlank() && containsCJK(token);
     }
 
     private boolean isExistingCountryName(String name) {
@@ -93,6 +100,7 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         } catch (Exception e) { return false; }
     }
 
+    // ================== 상세 조회 ==================
     @Override
     @Transactional(readOnly = true)
     public Optional<ProductWithAvgStarAndLike> findByIdWithDetailsAndAvgStarAndLike(Long productId, Long memberId) {
@@ -198,6 +206,7 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         return ordered;
     }
 
+    // ================== 검색 ==================
     @Override
     @Transactional(readOnly = true)
     public Slice<ProductWithAvgStarAndLike> searchProductsWithAvgStarAndLikeCursor(
@@ -242,10 +251,10 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         String cn = Optional.ofNullable(countryName).map(String::trim).orElse("");
         List<String> tokens = sanitizeTokens(tokensOf(keyword));
         boolean hasKeyword = !tokens.isEmpty();
-        boolean useFts = hasKeyword && tokens.size() == 1;
+        boolean single = hasKeyword && tokens.size() == 1;
         boolean hasCountryFilter = !cn.isEmpty() && !ALL_COUNTRIES.equals(cn);
 
-        if (!hasCountryFilter && tokens.size() == 1 && isExistingCountryName(tokens.get(0))) {
+        if (!hasCountryFilter && single && isExistingCountryName(tokens.get(0))) {
             hasCountryFilter = true;
             cn = tokens.get(0);
         }
@@ -253,83 +262,196 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         String[] parts = (sortKey == null ? "updatedAt,desc" : sortKey).split(",");
         String key = parts[0];
         boolean desc = parts.length < 2 || "desc".equalsIgnoreCase(parts[1]);
-
-        boolean isSingleToken = hasKeyword && tokens.size() == 1;
-        boolean restrictBySeed = false;
-        String seedToken = null;
-        List<String> restTokens = List.of();
-        int preLimit = Math.max(size * 200, 2000);
-        int probeLimit = Math.min(preLimit, 1000);
-
-        if (hasKeyword && tokens.size() >= 2) {
-            restrictBySeed = false;
-            seedToken = null;
-            restTokens = List.of();
-        }
-
-        if (isSingleToken && !restrictBySeed) {
-            try {
-                StringBuilder probe = new StringBuilder();
-                probe.append("SELECT 1 FROM product p WHERE p.deleted = false AND p.has_future_stock = 1 ");
-                if (hasCountryFilter) probe.append("AND p.country_name_cached = :countryName ");
-                probe.append("AND MATCH(p.search_text) AGAINST (:q IN BOOLEAN MODE) LIMIT :plim");
-                Query pq = entityManager.createNativeQuery(probe.toString());
-                if (hasCountryFilter) pq.setParameter("countryName", cn);
-                pq.setParameter("q", buildBooleanFulltextQuery(tokens));
-                pq.setParameter("plim", probeLimit);
-                int hits = pq.getResultList().size();
-                if (hits >= probeLimit) {
-                    restrictBySeed = true;
-                    seedToken = tokens.get(0);
-                }
-            } catch (Exception ignore) {}
-        }
-
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT p.id FROM product p ");
-        if (restrictBySeed) {
-            sql.append("JOIN (")
-                    .append(" SELECT id FROM product WHERE deleted = false AND has_future_stock = 1 ");
-            if (hasCountryFilter) sql.append(" AND country_name_cached = :countryName ");
-            sql.append(" AND MATCH(search_text) AGAINST (:seedBool IN BOOLEAN MODE) ")
-                    .append(" LIMIT :preLimit ")
-                    .append(") s ON s.id = p.id ");
-        }
-        sql.append("WHERE p.deleted = false AND p.has_future_stock = 1 ");
-        if (hasCountryFilter) {
-            sql.append("AND p.country_name_cached = :countryName ");
-        }
-        if (restrictBySeed) {
-            if (!restTokens.isEmpty()) {
-                for (int i = 0; i < restTokens.size(); i++) {
-                    sql.append("AND p.search_text LIKE :restLike").append(i).append(" ESCAPE '!' ");
-                }
-            }
-        } else {
-            if (useFts) {
-                sql.append("AND MATCH(p.search_text) AGAINST (:ftq IN BOOLEAN MODE) ");
-            } else if (hasKeyword) {
-                for (int i = 0; i < tokens.size(); i++) {
-                    sql.append("AND p.search_text LIKE :fbkw").append(i).append(" ESCAPE '!' ");
-                }
-            }
-        }
-
         boolean needRating = "rating".equals(key);
         boolean needMinPrice = "minPrice".equals(key);
-        if (needRating && lastAvgStar != null && lastUpdatedAt != null && lastId != null) {
+
+        // 커서 적용 여부(모두 채워졌을 때만 WHERE에 추가)
+        boolean useCursorOnRating    = needRating && lastAvgStar != null && lastUpdatedAt != null && lastId != null;
+        boolean useCursorOnPrice     = needMinPrice && lastMinPrice != null && lastUpdatedAt != null && lastId != null;
+        boolean useCursorOnUpdatedAt = "updatedAt".equals(key) && lastUpdatedAt != null && lastId != null;
+
+        // 키워드 없음
+        if (!hasKeyword) {
+            StringBuilder sql = new StringBuilder();
+            sql.append("SELECT p.id FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
+            if (hasCountryFilter) sql.append("AND p.country_name_cached = :countryName ");
+
+            if (useCursorOnRating) {
+                sql.append(" AND (p.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
+                        .append("  OR (p.avg_review_star_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
+                        .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
+            } else if (useCursorOnPrice) {
+                sql.append(" AND (p.min_discount_price_cached ").append(desc ? "<" : ">").append(" :lastM ")
+                        .append("  OR (p.min_discount_price_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
+                        .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
+            } else if (useCursorOnUpdatedAt) {
+                sql.append(" AND (p.updated_at ").append(desc ? "<" : ">").append(" :lastUpdatedAt ")
+                        .append("  OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))");
+            }
+
+            appendOrder(sql, key, desc, needRating, needMinPrice);
+            sql.append(" LIMIT :limitPlusOne");
+
+            Query q = entityManager.createNativeQuery(sql.toString(), Long.class);
+            q.setParameter("limitPlusOne", size + 1);
+            if (hasCountryFilter) q.setParameter("countryName", cn);
+            bindCursorParams(q, useCursorOnRating, useCursorOnPrice, useCursorOnUpdatedAt,
+                    lastAvgStar, lastMinPrice, lastUpdatedAt, lastId);
+
+            @SuppressWarnings("unchecked")
+            List<Long> ids = (List<Long>) q.getResultList();
+            return ids;
+        }
+
+        // ---------- 단일 키워드 ----------
+        if (single) {
+            String token = tokens.get(0);
+
+            // CJK 단일어는 전부 후보 프리리밋 + INSTR(또는 LIKE)로 처리
+            if (cjkLikelyExpensiveForBoolean(token)) {
+                return runInstrTopNForSingle(token, cn, hasCountryFilter,
+                        lastUpdatedAt, lastId, lastAvgStar, lastMinPrice,
+                        size, key, desc,
+                        needRating, needMinPrice,
+                        useCursorOnRating, useCursorOnPrice, useCursorOnUpdatedAt);
+            }
+
+            // 비-CJK 단일어는 FTS BOOLEAN (빠른 케이스)
+            StringBuilder sql = new StringBuilder();
+            sql.append("SELECT p.id FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
+            if (hasCountryFilter) sql.append("AND p.country_name_cached = :countryName ");
+            sql.append("AND MATCH(p.search_text) AGAINST (:ftq IN BOOLEAN MODE) ");
+
+            if (useCursorOnRating) {
+                sql.append(" AND (p.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
+                        .append("  OR (p.avg_review_star_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
+                        .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
+            } else if (useCursorOnPrice) {
+                sql.append(" AND (p.min_discount_price_cached ").append(desc ? "<" : ">").append(" :lastM ")
+                        .append("  OR (p.min_discount_price_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
+                        .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
+            } else if (useCursorOnUpdatedAt) {
+                sql.append(" AND (p.updated_at ").append(desc ? "<" : ">").append(" :lastUpdatedAt ")
+                        .append("  OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))");
+            }
+
+            appendOrder(sql, key, desc, needRating, needMinPrice);
+            sql.append(" LIMIT :limitPlusOne");
+
+            Query q = entityManager.createNativeQuery(sql.toString(), Long.class);
+            q.setParameter("limitPlusOne", size + 1);
+            if (hasCountryFilter) q.setParameter("countryName", cn);
+            q.setParameter("ftq", buildBooleanFulltextQuery(tokens));
+            bindCursorParams(q, useCursorOnRating, useCursorOnPrice, useCursorOnUpdatedAt,
+                    lastAvgStar, lastMinPrice, lastUpdatedAt, lastId);
+
+            @SuppressWarnings("unchecked")
+            List<Long> ids = (List<Long>) q.getResultList();
+            return ids;
+        }
+
+        // ---------- 다중 키워드: LIKE AND (안정적) ----------
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT p.id FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
+        if (hasCountryFilter) sql.append("AND p.country_name_cached = :countryName ");
+        for (int i = 0; i < tokens.size(); i++) {
+            sql.append("AND p.search_text LIKE :kw").append(i).append(" ESCAPE '!' ");
+        }
+
+        if (useCursorOnRating) {
             sql.append(" AND (p.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
                     .append("  OR (p.avg_review_star_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
                     .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
-        } else if (needMinPrice && lastMinPrice != null && lastUpdatedAt != null && lastId != null) {
+        } else if (useCursorOnPrice) {
             sql.append(" AND (p.min_discount_price_cached ").append(desc ? "<" : ">").append(" :lastM ")
                     .append("  OR (p.min_discount_price_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
                     .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
-        } else if ("updatedAt".equals(key) && lastUpdatedAt != null && lastId != null) {
+        } else if (useCursorOnUpdatedAt) {
             sql.append(" AND (p.updated_at ").append(desc ? "<" : ">").append(" :lastUpdatedAt ")
                     .append("  OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))");
         }
 
+        appendOrder(sql, key, desc, needRating, needMinPrice);
+        sql.append(" LIMIT :limitPlusOne");
+
+        Query q = entityManager.createNativeQuery(sql.toString(), Long.class);
+        q.setParameter("limitPlusOne", size + 1);
+        if (hasCountryFilter) q.setParameter("countryName", cn);
+        for (int i = 0; i < tokens.size(); i++) {
+            q.setParameter("kw" + i, toEscapedContainsPattern(tokens.get(i)));
+        }
+        bindCursorParams(q, useCursorOnRating, useCursorOnPrice, useCursorOnUpdatedAt,
+                lastAvgStar, lastMinPrice, lastUpdatedAt, lastId);
+
+        @SuppressWarnings("unchecked")
+        List<Long> ids = (List<Long>) q.getResultList();
+        return ids;
+    }
+
+    // --------- 후보 프리리밋 + 바깥 INSTR/LIKE ---------
+    private List<Long> runInstrTopNForSingle(
+            String token, String cn, boolean hasCountryFilter,
+            java.time.LocalDateTime lastUpdatedAt, Long lastId,
+            Double lastAvgStar, Integer lastMinPrice,
+            int size, String key, boolean desc,
+            boolean needRating, boolean needMinPrice,
+            boolean useCursorOnRating, boolean useCursorOnPrice, boolean useCursorOnUpdatedAt
+    ) {
+        int preLimit = Math.min(MAX_PRELIMIT, Math.max((size + 1) * 100, MIN_PRELIMIT));
+
+        // 1) 후보 집합: 정렬 인덱스(updated_at, id)로 상위 N개만 빠르게 확보 (+ 동일 커서 조건 포함)
+        StringBuilder cand = new StringBuilder();
+        cand.append("SELECT b.id FROM product b WHERE b.deleted=false AND b.has_future_stock=1 ");
+        if (hasCountryFilter) cand.append("AND b.country_name_cached = :countryName ");
+
+        // 커서 조건을 후보 서브쿼리에도 동일 적용(컬럼 prefix만 b.)
+        if (useCursorOnRating) {
+            cand.append(" AND (b.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
+                    .append("  OR (b.avg_review_star_cached = :lastM AND (b.updated_at < :lastUpdatedAt ")
+                    .append("      OR (b.updated_at = :lastUpdatedAt AND b.id < :lastId))) )");
+        } else if (useCursorOnPrice) {
+            cand.append(" AND (b.min_discount_price_cached ").append(desc ? "<" : ">").append(" :lastM ")
+                    .append("  OR (b.min_discount_price_cached = :lastM AND (b.updated_at < :lastUpdatedAt ")
+                    .append("      OR (b.updated_at = :lastUpdatedAt AND b.id < :lastId))) )");
+        } else if (useCursorOnUpdatedAt) {
+            cand.append(" AND (b.updated_at ").append(desc ? "<" : ">").append(" :lastUpdatedAt ")
+                    .append("  OR (b.updated_at = :lastUpdatedAt AND b.id < :lastId))");
+        }
+
+        // 후보는 항상 updated_at, id 정렬로 상수개만 잘라오기(빠름)
+        cand.append(" ORDER BY b.updated_at ").append(desc ? "DESC" : "ASC").append(", b.id DESC ");
+        cand.append(" LIMIT :preLimit ");
+
+        // 2) 본문: 후보와 조인 후 INSTR/LIKE로 필터링 → 비용은 O(preLimit)
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT p.id FROM product p ")
+                .append("JOIN (").append(cand).append(") s ON s.id = p.id ")
+                .append("WHERE p.deleted=false AND p.has_future_stock=1 ");
+        if (hasCountryFilter) sql.append("AND p.country_name_cached = :countryName ");
+
+        // CJK: INSTR가 조금 더 빠른 경향(= LIKE '%tok%')
+        sql.append(" AND INSTR(p.search_text, :tok) > 0 ");
+
+        // 최종 정렬(요청 정렬키 기준)
+        appendOrder(sql, key, desc, needRating, needMinPrice);
+        sql.append(" LIMIT :limitPlusOne");
+
+        Query q = entityManager.createNativeQuery(sql.toString(), Long.class);
+        q.setParameter("tok", token);
+        q.setParameter("preLimit", preLimit);
+        q.setParameter("limitPlusOne", size + 1);
+        if (hasCountryFilter) q.setParameter("countryName", cn);
+        // 커서 파라미터 바인딩(WHERE에 들어간 경우에만)
+        bindCursorParams(q, useCursorOnRating, useCursorOnPrice, useCursorOnUpdatedAt,
+                lastAvgStar, lastMinPrice, lastUpdatedAt, lastId);
+
+        @SuppressWarnings("unchecked")
+        List<Long> ids = (List<Long>) q.getResultList();
+        return ids;
+    }
+
+    private static void appendOrder(StringBuilder sql, String key, boolean desc, boolean needRating, boolean needMinPrice) {
+        sql.append(" ");
         if (needRating) {
             sql.append(" ORDER BY p.avg_review_star_cached ").append(desc ? "DESC" : "ASC")
                     .append(", p.updated_at DESC, p.id DESC ");
@@ -340,97 +462,25 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
             sql.append(" ORDER BY p.updated_at ").append(desc ? "DESC" : "ASC")
                     .append(", p.id DESC ");
         }
+    }
 
-        sql.append(" LIMIT :limitPlusOne");
-
-        Query q = entityManager.createNativeQuery(sql.toString(), Long.class);
-        q.setParameter("limitPlusOne", size + 1);
-        if (hasCountryFilter) q.setParameter("countryName", cn);
-        if (restrictBySeed) {
-            q.setParameter("seedBool", "+" + seedToken);
-            q.setParameter("preLimit", preLimit);
-            if (!restTokens.isEmpty()) {
-                for (int i = 0; i < restTokens.size(); i++) {
-                    q.setParameter("restLike" + i, toEscapedContainsPattern(restTokens.get(i)));
-                }
-            }
-        } else {
-            if (useFts) {
-                q.setParameter("ftq", buildBooleanFulltextQuery(tokens));
-            } else if (hasKeyword) {
-                for (int i = 0; i < tokens.size(); i++) {
-                    q.setParameter("fbkw" + i, toEscapedContainsPattern(tokens.get(i)));
-                }
-            }
-        }
-        if (lastUpdatedAt != null) q.setParameter("lastUpdatedAt", java.sql.Timestamp.valueOf(lastUpdatedAt));
-        if (lastId != null) q.setParameter("lastId", lastId);
-        if (("rating".equals(key) && lastAvgStar != null) || ("minPrice".equals(key) && lastMinPrice != null)) {
-            q.setParameter("lastM", "rating".equals(key) ? lastAvgStar : lastMinPrice);
-        }
-        try {
-            @SuppressWarnings("unchecked")
-            List<Long> ids = (List<Long>) q.getResultList();
-            return ids;
-        } catch (Exception ex) {
-            String msg = ex.getMessage();
-            boolean ftsCache = msg != null && msg.contains("FTS query exceeds result cache limit");
-            if (ftsCache) {
-                StringBuilder fb = new StringBuilder();
-                fb.append("SELECT p.id FROM product p WHERE p.deleted = false AND p.has_future_stock = 1 ");
-                if (hasCountryFilter) fb.append("AND p.country_name_cached = :countryName ");
-                if (useFts && hasKeyword) {
-                    fb.append("AND MATCH(p.search_text) AGAINST (:ftNat IN NATURAL LANGUAGE MODE) ");
-                } else if (hasKeyword) {
-                    for (int i = 0; i < tokens.size(); i++) {
-                        fb.append("AND p.search_text LIKE :fbkw").append(i).append(" ESCAPE '!'").append(' ');
-                    }
-                }
-
-                if (needRating && lastAvgStar != null && lastUpdatedAt != null && lastId != null) {
-                    fb.append(" AND (p.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
-                            .append("  OR (p.avg_review_star_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
-                            .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
-                } else if (needMinPrice && lastMinPrice != null && lastUpdatedAt != null && lastId != null) {
-                    fb.append(" AND (p.min_discount_price_cached ").append(desc ? "<" : ">").append(" :lastM ")
-                            .append("  OR (p.min_discount_price_cached = :lastM AND (p.updated_at < :lastUpdatedAt ")
-                            .append("      OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))) )");
-                } else if ("updatedAt".equals(key) && lastUpdatedAt != null && lastId != null) {
-                    fb.append(" AND (p.updated_at ").append(desc ? "<" : ">").append(" :lastUpdatedAt ")
-                            .append("  OR (p.updated_at = :lastUpdatedAt AND p.id < :lastId))");
-                }
-
-                if (needRating) {
-                    fb.append(" ORDER BY p.avg_review_star_cached ").append(desc ? "DESC" : "ASC")
-                            .append(", p.updated_at DESC, p.id DESC ");
-                } else if (needMinPrice) {
-                    fb.append(" ORDER BY p.min_discount_price_cached ").append(desc ? "DESC" : "ASC")
-                            .append(", p.updated_at DESC, p.id DESC ");
-                } else {
-                    fb.append(" ORDER BY p.updated_at ").append(desc ? "DESC" : "ASC")
-                            .append(", p.id DESC ");
-                }
-                fb.append(" LIMIT :limitPlusOne");
-
-                Query q2 = entityManager.createNativeQuery(fb.toString(), Long.class);
-                q2.setParameter("limitPlusOne", size + 1);
-                if (hasCountryFilter) q2.setParameter("countryName", cn);
-                if (useFts && hasKeyword) q2.setParameter("ftNat", String.join(" ", tokens));
-                else if (hasKeyword) {
-                    for (int i = 0; i < tokens.size(); i++) {
-                        q2.setParameter("fbkw" + i, toEscapedContainsPattern(tokens.get(i)));
-                    }
-                }
-                if (lastUpdatedAt != null) q2.setParameter("lastUpdatedAt", java.sql.Timestamp.valueOf(lastUpdatedAt));
-                if (lastId != null) q2.setParameter("lastId", lastId);
-                if (("rating".equals(key) && lastAvgStar != null) || ("minPrice".equals(key) && lastMinPrice != null)) {
-                    q2.setParameter("lastM", "rating".equals(key) ? lastAvgStar : lastMinPrice);
-                }
-                @SuppressWarnings("unchecked")
-                List<Long> ids2 = (List<Long>) q2.getResultList();
-                return ids2;
-            }
-            throw ex;
+    private static void bindCursorParams(
+            Query q,
+            boolean useCursorOnRating, boolean useCursorOnPrice, boolean useCursorOnUpdatedAt,
+            Double lastAvgStar, Integer lastMinPrice,
+            java.time.LocalDateTime lastUpdatedAt, Long lastId
+    ) {
+        if (useCursorOnRating) {
+            q.setParameter("lastM", lastAvgStar);
+            q.setParameter("lastUpdatedAt", java.sql.Timestamp.valueOf(lastUpdatedAt));
+            q.setParameter("lastId", lastId);
+        } else if (useCursorOnPrice) {
+            q.setParameter("lastM", lastMinPrice);
+            q.setParameter("lastUpdatedAt", java.sql.Timestamp.valueOf(lastUpdatedAt));
+            q.setParameter("lastId", lastId);
+        } else if (useCursorOnUpdatedAt) {
+            q.setParameter("lastUpdatedAt", java.sql.Timestamp.valueOf(lastUpdatedAt));
+            q.setParameter("lastId", lastId);
         }
     }
 }
