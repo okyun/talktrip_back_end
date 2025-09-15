@@ -254,25 +254,6 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         String key = parts[0];
         boolean desc = parts.length < 2 || "desc".equalsIgnoreCase(parts[1]);
 
-        // 추가팁 1) 다단어 0-hit 단락: 하나라도 문서에 없으면 즉시 0건 반환 (기존 흐름 영향 없음)
-        if (hasKeyword && tokens.size() >= 2) {
-            try {
-                for (String t : tokens) {
-                    if (t == null || t.isBlank()) continue;
-                    StringBuilder ex = new StringBuilder();
-                    ex.append("SELECT 1 FROM product p WHERE p.deleted = false AND p.has_future_stock = 1 ");
-                    if (hasCountryFilter) ex.append("AND p.country_name_cached = :countryName ");
-                    ex.append("AND MATCH(p.search_text) AGAINST (:q IN BOOLEAN MODE) LIMIT 1");
-                    Query eq = entityManager.createNativeQuery(ex.toString());
-                    if (hasCountryFilter) eq.setParameter("countryName", cn);
-                    eq.setParameter("q", "+" + t);
-                    if (eq.getResultList().isEmpty()) {
-                        return java.util.Collections.emptyList();
-                    }
-                }
-            } catch (Exception ignore) { /* FTS 불가 시 단락 검사 생략 */ }
-        }
-
         boolean isSingleToken = hasKeyword && tokens.size() == 1;
         boolean restrictBySeed = false;
         String seedToken = null;
