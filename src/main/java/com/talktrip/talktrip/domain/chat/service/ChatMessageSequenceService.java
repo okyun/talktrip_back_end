@@ -1,5 +1,6 @@
 package com.talktrip.talktrip.domain.chat.service;
 
+import com.talktrip.talktrip.domain.chat.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -11,16 +12,39 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatMessageSequenceService {
     private final RedisTemplate<String,Object> redisTemplate;
+    private final ChatMessageRepository chatMessageRepository;
     private final String prefix = "chat:sequence";
 
     private Long getNextSequenceInternal(String roomId){
         String key = prefix+":"+roomId;
         
-        // Redis의 원자적 증가 연산을 사용하여 메시지 순서를 보장
-        Long sequence = redisTemplate.opsForValue().increment(key);
-        
-        // 만약 increment 결과가 null이면 1L을 반환
-        return sequence != null ? sequence : 1L;
+        try {
+            // 1) Redis에서 현재 시퀀스 조회
+            Long redisSequence = (Long) redisTemplate.opsForValue().get(key);
+            
+            if (redisSequence == null) {
+                // 2) Redis에 값이 없으면 DB에서 마지막 sequenceNumber 조회
+                Long dbMaxSequence = chatMessageRepository.findMaxSequenceNumberByRoomId(roomId);
+                Long nextSequence = dbMaxSequence + 1;
+                
+                // 3) Redis에 DB 값 + 1을 설정
+                redisTemplate.opsForValue().set(key, nextSequence);
+                log.debug("채팅방 {} DB 기반 시퀀스 초기화: {} -> {}", roomId, dbMaxSequence, nextSequence);
+                return nextSequence;
+            } else {
+                // 4) Redis에 값이 있으면 원자적 증가 연산 사용
+                Long sequence = redisTemplate.opsForValue().increment(key);
+                log.debug("채팅방 {} Redis 기반 시퀀스 증가: {} -> {}", roomId, redisSequence, sequence);
+                return sequence;
+            }
+        } catch (Exception e) {
+            log.error("채팅방 {} 시퀀스 생성 중 오류 발생: {}", roomId, e.getMessage(), e);
+            // 5) Redis 오류 시 DB 기반으로 폴백
+            Long dbMaxSequence = chatMessageRepository.findMaxSequenceNumberByRoomId(roomId);
+            Long nextSequence = dbMaxSequence + 1;
+            log.debug("채팅방 {} DB 폴백 시퀀스: {} -> {}", roomId, dbMaxSequence, nextSequence);
+            return nextSequence;
+        }
     }
 
     /**
