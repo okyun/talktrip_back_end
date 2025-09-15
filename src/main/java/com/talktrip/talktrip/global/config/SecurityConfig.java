@@ -41,6 +41,8 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
+                        .requestMatchers("/api/actuator/**").permitAll()  // Actuator 엔드포인트 허용
+                        .requestMatchers("/actuator/**").permitAll()  // Actuator 엔드포인트 허용 (기본 경로)
                         .requestMatchers("/api/products", "/api/products/**").permitAll()
                         .requestMatchers("/api/member/kakao-login-url").permitAll()
                         .requestMatchers("/api/member/kakao").permitAll()
@@ -50,11 +52,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/tosspay/**").permitAll()
                         .requestMatchers("/api/chat/**").permitAll()  // 채팅 API 허용
                         .requestMatchers("/api/chat/me/**").permitAll()  // 채팅 API 허용 (더 구체적)
-//                        .requestMatchers("/ws/**", "/ws").permitAll()
-//                        .requestMatchers("/ws-info/**", "/ws-info").permitAll()
-//                        .requestMatchers("/topic/**").permitAll()
-//                        .requestMatchers("/app/**").permitAll()
-//                        .requestMatchers("/ws/**", "/app/**", "/topic/**", "/websocket/**", "/sockjs-node/**").permitAll()
+                        .requestMatchers("/ws/**", "/ws").permitAll()
+                        .requestMatchers("/ws-info/**", "/ws-info").permitAll()
+                        .requestMatchers("/topic/**").permitAll()
+                        .requestMatchers("/app/**").permitAll()
+                        .requestMatchers("/websocket/**", "/sockjs-node/**").permitAll()
 
                         .anyRequest().authenticated()
                 )
@@ -67,8 +69,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.addAllowedOrigin("http://localhost:5173"); // ✅ 정확히 너가 쓰는 origin
-        configuration.setAllowCredentials(true);                 // ✅ WebSocket은 반드시 true
+//        configuration.addAllowedOrigin("http://localhost:5173"); // ✅ 정확히 너가 쓰는 origin
+//        configuration.setAllowCredentials(true);                 // ✅ WebSocket은 반드시 true
+        configuration.addAllowedOriginPattern("*"); // 모든 origin 허용
+        configuration.setAllowCredentials(true);    // WebSocket은 반드시 true
         configuration.addAllowedMethod("*");
         configuration.addAllowedHeader("*");
 
