@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="SqlDialectMappings">
+    <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/54a3492f-6f52-4543-8c9a-d2f1e02d237e/console_3.sql" dialect="MySQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/talktrip/talktrip/domain/product/repository/ProductRepository.java" dialect="GenericSQL" />
   </component>
 </project>

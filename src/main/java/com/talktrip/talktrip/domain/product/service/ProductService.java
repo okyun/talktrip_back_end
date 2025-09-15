@@ -3,8 +3,8 @@ package com.talktrip.talktrip.domain.product.service;
 import com.talktrip.talktrip.domain.member.repository.MemberRepository;
 import com.talktrip.talktrip.domain.product.dto.ProductWithAvgStarAndLike;
 import com.talktrip.talktrip.domain.product.dto.response.ProductDetailResponse;
+import com.talktrip.talktrip.domain.product.dto.response.ProductSliceResponse;
 import com.talktrip.talktrip.domain.product.dto.response.ProductSummaryResponse;
-import com.talktrip.talktrip.domain.product.entity.Product;
 import com.talktrip.talktrip.domain.product.repository.ProductRepository;
 import com.talktrip.talktrip.domain.review.dto.response.ReviewResponse;
 import com.talktrip.talktrip.domain.review.entity.Review;
@@ -14,19 +14,13 @@ import com.talktrip.talktrip.global.exception.MemberException;
 import com.talktrip.talktrip.global.exception.ProductException;
 import com.talktrip.talktrip.global.repository.CountryRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
-import java.time.LocalDate;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -38,165 +32,91 @@ public class ProductService {
     private final ReviewRepository reviewRepository;
     private final MemberRepository memberRepository;
     private final CountryRepository countryRepository;
-    private final RestTemplate restTemplate;
 
-    @Value("${fastapi.base-url}")
-    private String fastApiBaseUrl;
-
-    @Transactional(readOnly = true)
-    public Page<ProductSummaryResponse> searchProducts(
-            String keyword,
-            String countryName,
-            Long memberId,
-            Pageable pageable
+    @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
+    public ProductSliceResponse searchProductsCursor(
+            String keyword, String countryName, Long memberId, String cursor, int size, String sortKey
     ) {
         validateMember(memberId);
         validateCountry(countryName);
-        Page<ProductWithAvgStarAndLike> searchResults = productRepository.searchProductsWithAvgStarAndLike(
-                keyword, countryName, memberId, pageable
-        );
-        
-        if (searchResults.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, 0);
+
+        java.time.LocalDateTime lastUpdatedAt = null;
+        Long lastId = null;
+        Double lastAvgStar = null;
+        Integer lastMinPrice = null;
+
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                String json = new String(java.util.Base64.getUrlDecoder().decode(cursor));
+                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                var node = mapper.readTree(json);
+                if (node.hasNonNull("updatedAt")) lastUpdatedAt = java.time.LocalDateTime.parse(node.get("updatedAt").asText());
+                if (node.hasNonNull("id")) lastId = node.get("id").asLong();
+                if (node.hasNonNull("avgStar")) lastAvgStar = node.get("avgStar").asDouble();
+                if (node.has("minPrice") && !node.get("minPrice").isNull()) lastMinPrice = node.get("minPrice").asInt();
+            } catch (Exception ignore) {}
         }
 
-        List<ProductSummaryResponse> productResponses = searchResults.getContent().stream()
-                .map(result -> {
-                    Product product = result.getProduct();
-                    Double avgStar = result.getAvgStar();
-                    Boolean isLiked = result.getIsLiked();
-                    return ProductSummaryResponse.from(product, avgStar, isLiked);
-                })
+        var slice = productRepository.searchProductsWithAvgStarAndLikeCursor(
+                keyword, countryName, memberId, lastUpdatedAt, lastId, lastAvgStar, lastMinPrice, size, sortKey
+        );
+
+        List<ProductSummaryResponse> items = slice.getContent().stream()
+                .map(r -> ProductSummaryResponse.from(r.getProduct(), r.getAvgStar(), r.getIsLiked()))
                 .toList();
 
-        return new PageImpl<>(productResponses, pageable, searchResults.getTotalElements());
+        java.time.LocalDateTime nextUpdated = null;
+        Long nextId = null;
+        Double nextAvg = null;
+        Integer nextMin = null;
+
+        if (!slice.getContent().isEmpty()) {
+            var last = slice.getContent().get(slice.getContent().size() - 1);
+            nextUpdated = last.getProduct().getUpdatedAt();
+            nextId = last.getProduct().getId();
+            nextAvg = last.getAvgStar();
+            nextMin = last.getMinPrice();
+        }
+
+        String nextCursor = null;
+        if (slice.hasNext() && nextId != null) {
+            try {
+                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                var node = mapper.createObjectNode();
+                node.put("updatedAt", nextUpdated != null ? nextUpdated.toString() : null);
+                node.put("id", nextId);
+                String key = (sortKey == null ? "updatedAt" : sortKey.split(",")[0]);
+                if ("rating".equals(key)) node.put("avgStar", nextAvg);
+                if ("minPrice".equals(key)) node.put("minPrice", nextMin);
+                nextCursor = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(mapper.writeValueAsBytes(node));
+            } catch (Exception ignore) {}
+        }
+
+        return new ProductSliceResponse(items, slice.hasNext(), nextCursor);
     }
 
     @Transactional(readOnly = true)
-    public ProductDetailResponse getProductDetail(
-            Long productId,
-            Long memberId,
-            Pageable pageable
-    ) {
+    public ProductDetailResponse getProductDetail(Long productId, Long memberId, Pageable pageable) {
         validateMember(memberId);
         validateProduct(productId);
-        ProductWithAvgStarAndLike productWithDetails = findProductWithDetailsAndAvgStarAndLike(productId, memberId);
 
-        Double avgStar = productWithDetails.getAvgStar();
-        boolean isLiked = productWithDetails.getIsLiked();
+        ProductWithAvgStarAndLike dto = productRepository.findByIdWithDetailsAndAvgStarAndLike(productId, memberId)
+                .orElseThrow(() -> new ProductException(ErrorCode.PRODUCT_NOT_FOUND));
 
         Page<Review> reviewPage = reviewRepository.findByProductIdWithPaging(productId, pageable);
-        List<ReviewResponse> reviewResponses = ReviewResponse.to(reviewPage.getContent(), productWithDetails.getProduct());
+        List<ReviewResponse> reviewResponses = ReviewResponse.to(reviewPage.getContent(), dto.getProduct());
 
-        return ProductDetailResponse.from(productWithDetails.getProduct(), avgStar, reviewResponses, isLiked);
+        return ProductDetailResponse.from(dto.getProduct(), dto.getAvgStar(), reviewResponses, dto.getIsLiked());
     }
 
     private void validateMember(Long memberId) {
-        if (memberId != null && !memberRepository.existsById(memberId)) {
-            throw new MemberException(ErrorCode.USER_NOT_FOUND);
-        }
+        if (memberId != null && !memberRepository.existsById(memberId)) throw new MemberException(ErrorCode.USER_NOT_FOUND);
     }
-
     private void validateProduct(Long productId) {
-        if (productId == null) {
-            throw new ProductException(ErrorCode.PRODUCT_NOT_FOUND);
-        }
-        
-        if (!productRepository.existsById(productId)) {
-            throw new ProductException(ErrorCode.PRODUCT_NOT_FOUND);
-        }
+        if (productId == null || !productRepository.existsById(productId)) throw new ProductException(ErrorCode.PRODUCT_NOT_FOUND);
     }
-
     private void validateCountry(String countryName) {
-        if (countryName == null || countryName.isBlank() || ALL_COUNTRIES.equals(countryName)) {
-            return;
-        }
-
-        if (!countryRepository.existsByName(countryName.trim())) {
-            throw new ProductException(ErrorCode.COUNTRY_NOT_FOUND);
-        }
-    }
-
-    private ProductWithAvgStarAndLike findProductWithDetailsAndAvgStarAndLike(Long productId, Long memberId) {
-        return productRepository.findByIdWithDetailsAndAvgStarAndLike(productId, memberId)
-                .orElseThrow(() -> new ProductException(ErrorCode.PRODUCT_NOT_FOUND));
-    }
-
-    @Transactional(readOnly = true)
-    public Page<ProductSummaryResponse> aiSearchProducts(
-            String query,
-            Long memberId,
-            Pageable pageable
-    ) {
-        validateMember(memberId);
-        validateQuery(query);
-        
-        List<Long> productIds = fetchProductIdsFromAI(query);
-        
-        if (productIds.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, 0);
-        }
-
-        // 모든 데이터를 한 번에 조회 (단일 쿼리 + 페이징)
-        Page<ProductWithAvgStarAndLike> productsWithDetails = productRepository.findProductsWithAvgStarAndLikeByIds(productIds, memberId, pageable);
-
-        // AI 응답 순서 유지를 위한 인덱스 맵
-        Map<Long, Integer> idOrder = createIdOrderMap(productIds);
-
-        List<ProductSummaryResponse> content = productsWithDetails.getContent().stream()
-                .sorted(Comparator.comparing(result -> idOrder.getOrDefault(result.getProduct().getId(), Integer.MAX_VALUE)))
-                .map(this::createProductSummaryResponseFromDetails)
-                .toList();
-
-        return new PageImpl<>(content, pageable, productsWithDetails.getTotalElements());
-    }
-
-    private List<Long> fetchProductIdsFromAI(String query) {
-        try {
-            String fastApiUrl = fastApiBaseUrl + "/query";
-            Map<String, String> requestBody = Map.of("query", query);
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.postForObject(
-                    fastApiUrl,
-                    requestBody,
-                    Map.class
-            );
-
-            if (response == null || !response.containsKey("product_ids")) {
-                return List.of();
-            }
-
-            Object productIdsObj = response.get("product_ids");
-            if (!(productIdsObj instanceof List<?>)) {
-                return List.of();
-            }
-
-            return ((List<?>) productIdsObj).stream()
-                    .map(Object::toString)
-                    .map(Long::parseLong)
-                    .toList();
-
-        } catch (Exception e) {
-            return List.of();
-        }
-    }
-
-    private Map<Long, Integer> createIdOrderMap(List<Long> productIds) {
-        Map<Long, Integer> idOrder = new HashMap<>();
-        for (int i = 0; i < productIds.size(); i++) {
-            idOrder.put(productIds.get(i), i);
-        }
-        return idOrder;
-    }
-
-    private ProductSummaryResponse createProductSummaryResponseFromDetails(ProductWithAvgStarAndLike details) {
-        return ProductSummaryResponse.from(details.getProduct(), details.getAvgStar(), details.getIsLiked());
-    }
-
-    private void validateQuery(String query) {
-        if (query == null || query.isBlank()) {
-            throw new ProductException(ErrorCode.PRODUCT_NOT_FOUND);
-        }
+        if (countryName == null || countryName.isBlank() || ALL_COUNTRIES.equals(countryName)) return;
+        if (!countryRepository.existsByName(countryName.trim())) throw new ProductException(ErrorCode.COUNTRY_NOT_FOUND);
     }
 }

@@ -2,7 +2,9 @@ package com.talktrip.talktrip.domain.product.dto.response;
 
 import com.talktrip.talktrip.domain.product.entity.Product;
 import com.talktrip.talktrip.domain.product.entity.ProductOption;
+import java.time.LocalDateTime;
 import lombok.Builder;
+import lombok.Getter;
 
 @Builder
 public record ProductSummaryResponse(
@@ -13,7 +15,8 @@ public record ProductSummaryResponse(
         int minPrice,
         int minDiscountPrice,
         Double averageReviewStar,
-        boolean isLiked
+        boolean isLiked,
+        LocalDateTime updatedAt
 ) {
 
     public static ProductSummaryResponse from(Product product, Double averageReviewStar, boolean isLiked) {
@@ -30,6 +33,7 @@ public record ProductSummaryResponse(
                 .minDiscountPrice(minDiscountPrice)
                 .averageReviewStar(averageReviewStar)
                 .isLiked(isLiked)
+                .updatedAt(product.getUpdatedAt())
                 .build();
     }
 }

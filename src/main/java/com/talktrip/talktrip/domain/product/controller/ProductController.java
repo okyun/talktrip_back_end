@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static com.talktrip.talktrip.global.util.SortUtil.buildSort;
@@ -25,19 +26,19 @@ import static com.talktrip.talktrip.global.util.SortUtil.buildSort;
 public class ProductController {
     private final ProductService productService;
 
-    @Operation(summary = "상품 목록 검색")
+    @Operation(summary = "상품 목록 검색(커서 기반, 무한스크롤)")
     @GetMapping
-    public ResponseEntity<Page<ProductSummaryResponse>> getProducts(
+    public ResponseEntity<com.talktrip.talktrip.domain.product.dto.response.ProductSliceResponse> getProducts(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "전체") String countryName,
-            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "updatedAt,desc") List<String> sort,
+            @RequestParam(required = false) String cursor,
             @AuthenticationPrincipal CustomMemberDetails memberDetails
     ) {
-        Pageable pageable = PageRequest.of(page, size, buildSort(sort));
         Long memberId = extractMemberId(memberDetails);
-        return ResponseEntity.ok(productService.searchProducts(keyword, countryName, memberId, pageable));
+        String sortKey = (sort != null && !sort.isEmpty()) ? sort.get(0) : "updatedAt,desc";
+        return ResponseEntity.ok(productService.searchProductsCursor(keyword, countryName, memberId, cursor, size, sortKey));
     }
 
     @Operation(summary = "상품 상세 조회")
@@ -52,20 +53,6 @@ public class ProductController {
         Pageable pageable = PageRequest.of(page, size, buildSort(sort));
         Long memberId = extractMemberId(memberDetails);
         return ResponseEntity.ok(productService.getProductDetail(productId, memberId, pageable));
-    }
-
-    @Operation(summary = "AI 상품 검색")
-    @GetMapping("/aisearch")
-    public ResponseEntity<Page<ProductSummaryResponse>> aiSearchProducts(
-            @RequestParam String question,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "updatedAt,desc") List<String> sort,
-            @AuthenticationPrincipal CustomMemberDetails memberDetails
-    ) {
-        Pageable pageable = PageRequest.of(page, size, buildSort(sort));
-        Long memberId = extractMemberId(memberDetails);
-        return ResponseEntity.ok(productService.aiSearchProducts(question, memberId, pageable));
     }
 
     private Long extractMemberId(CustomMemberDetails memberDetails) {

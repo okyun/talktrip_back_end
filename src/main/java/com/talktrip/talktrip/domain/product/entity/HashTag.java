@@ -11,10 +11,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(indexes = {
-    @Index(name = "idx_hashtag_product", columnList = "product_id"),
-    @Index(name = "idx_hashtag_tag", columnList = "hashtag")
-})
+@Table
 public class HashTag {
 
     @Id

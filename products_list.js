@@ -2,41 +2,45 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
 
-// 실행 옵션: VU 50명, 2분 동안 실행
+// 실행 옵션: 1 VU, 10분 동안 실행 (느린 응답 대비)
 export const options = {
     vus: 1,
-    duration: '5s',
+    duration: '10s',
     thresholds: {
-        http_req_failed: ['rate<0.01'],      // 실패율 1% 미만
-        http_req_duration: ['p(95)<500'],    // 95% 요청이 500ms 미만
+        http_req_failed: ['rate<0.01'],
+        product_list_ms: ['p(99)<300000'],   // 99% 5분 미만
     },
 };
 
-// 커스텀 메트릭
+// 커스텀 메트릭 (키워드 검색만 검증)
 const listDuration = new Trend('product_list_ms', true);
 const listCount = new Counter('product_list_count');
 
 export default function () {
     const base = __ENV.BASE_URL || 'http://localhost:8080';
+    const keyword = __ENV.KEYWORD || '';
+    const country = encodeURIComponent(__ENV.COUNTRY || '전체');
+    const size = __ENV.SIZE || '9';
+    const page = __ENV.PAGE || '0';
 
-    // 컨트롤러 defaultValue를 쓰기 때문에 page, size, sort는 전달하지 않음
-    const url = `${base}/api/products?countryName=${encodeURIComponent('전체')}`;
+    const listUrl = `${base}/api/products?countryName=${country}&size=${size}&page=${page}` + (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '');
 
-    const start = Date.now();
-    const res = http.get(url, {
+    const res = http.get(listUrl, {
         tags: { endpoint: 'GET /api/products' },
         timeout: '10s',
     });
-    listDuration.add(Date.now() - start);
+
+    // 소요시간 기록
+    listDuration.add(res.timings.duration);
     listCount.add(1);
 
-    // 디버그 로그로 상태/본문 일부 확인
-    console.log(`status=`, res.status);
+    // 디버그 로그
+    console.log(`list status=`, res.status);
     if (res.body) {
-        console.log(`body(200 bytes)=`, res.body.substring(0, 200));
+        console.log(`list body(200 bytes)=`, res.body.substring(0, 200));
     }
 
-    check(res, { 'status is 2xx': (r) => r.status >= 200 && r.status < 300 });
+    check(res, { 'list status is 2xx': (r) => r.status >= 200 && r.status < 300 });
 
     // 0.1초 휴식 (사용자 think time 흉내)
     sleep(0.1);

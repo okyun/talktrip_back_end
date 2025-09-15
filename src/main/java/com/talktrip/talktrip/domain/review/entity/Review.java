@@ -18,7 +18,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Table(indexes = {
     @Index(name = "idx_review_product_latest", columnList = "product_id, updatedAt DESC"),
-    @Index(name = "idx_review_member_latest", columnList = "member_id, updatedAt DESC")
+    @Index(name = "idx_review_member_latest", columnList = "member_id, updatedAt DESC"),
+    // 평점 집계 최적화: product_id + reviewStar (AVG 계산용)
+    @Index(name = "idx_review_rating", columnList = "product_id, reviewStar"),
+    // 평점 정렬 최적화: product_id + reviewStar DESC (정렬용)
+    @Index(name = "idx_review_rating_desc", columnList = "product_id, reviewStar DESC")
 })
 public class Review extends BaseEntity {
 

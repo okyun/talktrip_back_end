@@ -8,7 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-public interface ProductRepository extends JpaRepository<Product, Long>, ProductRepositoryCustom {
+public interface ProductRepository extends JpaRepository<Product, Long>, AdminProductRepositoryCustom, ProductSearchRepositoryCustom {
 
     @Query(value = "SELECT * FROM product WHERE id = :id", nativeQuery = true)
     Optional<Product> findByIdIncludingDeleted(@Param("id") Long id);
