@@ -420,77 +420,7 @@ public class RedisMessageBroker implements MessageListener {
         }
     }
 
-    /**
-     * 메시지를 발행하고 중복 처리 방지
-     * 
-     * @param topic 메시지 토픽
-     * @param message 메시지 내용
-     * @return 메시지 ID
-     */
-    public String publishMessage(String topic, Object message) {
-        messageProcessingLock.lock();
-        try {
-            // 메시지 내용을 JSON으로 직렬화
-            String messageContent = objectMapper.writeValueAsString(message);
-            
-            // 메시지 해시 생성
-            String messageHash = generateMessageHash(topic, messageContent);
-            
-            // messageHashToId가 null인 경우 처리
-            if (messageHashToId == null) {
-                log.warn("[RedisMessageBroker] messageHashToId가 null입니다. 중복 체크를 건너뜁니다.");
-            }
-            
-            // 중복 처리 확인 (여러 방법으로 체크)
-            if (messageHashToId != null && isDuplicateMessage(topic, messageContent, messageHash)) {
-                String existingTimeBasedId = messageHashToId.get(messageHash);
-                String existingId = extractMessageIdFromTimeBasedId(existingTimeBasedId);
-                log.warn("[RedisMessageBroker] 중복 메시지 감지: topic={}, hash={}, existingId={}", 
-                        topic, messageHash, existingId);
-                return existingId != null ? existingId : generateMessageId();
-            }
-            
-            // 메시지 ID 생성
-            String messageId = generateMessageId();
-            
-            // Redis에 메시지 발행
-            redisTemplate.convertAndSend(topic, messageContent);
-            
-            // 처리된 메시지 정보 저장
-            MessageInfo messageInfo = new MessageInfo(messageId, topic, messageContent, messageHash);
-            processedMessages.put(messageId, messageInfo);
-            
-            // messageHashToId가 null이 아닌 경우에만 저장
-            if (messageHashToId != null) {
-                // 현재 시간을 ID에 포함하여 저장 (정렬을 위해)
-                long currentTime = System.currentTimeMillis();
-                String timeBasedId = currentTime + "_" + messageId;
-                messageHashToId.put(messageHash, timeBasedId);
-                
-                // messageHashToId 크기가 10000을 넘으면 오래된 데이터 정리
-                if (messageHashToId.size() > 10000) {
-                    cleanupOldMessageHashes();
-                }
-            } else {
-                log.warn("[RedisMessageBroker] messageHashToId가 null이므로 해시 저장을 건너뜁니다: hash={}", messageHash);
-            }
-            
-            // 토픽+내용 기반 중복 체크를 위한 키 저장
-            String topicContentKey = topic + ":" + messageHash;
-            topicContentMap.put(topicContentKey, LocalDateTime.now());
-            
-            log.info("[RedisMessageBroker] 메시지 발행 완료: messageId={}, topic={}, hash={}", 
-                    messageId, topic, messageHash);
-            
-            return messageId;
-            
-        } catch (Exception e) {
-            log.error("[RedisMessageBroker] 메시지 발행 실패: topic={}, error={}", topic, e.getMessage(), e);
-            throw new RuntimeException("메시지 발행 실패", e);
-        } finally {
-            messageProcessingLock.unlock();
-        }
-    }
+
 
     /**
      * 단순 메시지 발행 (중복 처리 없음)
@@ -1375,9 +1305,9 @@ public class RedisMessageBroker implements MessageListener {
     private void handleRoomMessage(String channel, String messageBody) {
         try {
             // 채널에서 방 ID 추출
-            String roomId = channel.substring("chat:room:".length());
+            String channelRoomId = channel.substring("chat:room:".length());
             
-            log.info("[{}][RedisMessageBroker] 채팅방 메시지 처리: roomId={}", instanceId, roomId);
+            log.info("[{}][RedisMessageBroker] 채팅방 메시지 처리: channelRoomId={}", instanceId, channelRoomId);
             
             // 메시지를 JSON으로 파싱하여 객체로 변환
             Object messageObject = objectMapper.readValue(messageBody, Object.class);
@@ -1391,12 +1321,25 @@ public class RedisMessageBroker implements MessageListener {
             // 기존 RedisSubscriber 기능: WebSocket으로 클라이언트에게 전송
             try {
                 // ChatMessagePush DTO로 파싱 시도
-                ChatMessagePush dto =
-                    objectMapper.readValue(messageBody,ChatMessagePush.class);
+                ChatMessagePush dto = objectMapper.readValue(messageBody, ChatMessagePush.class);
+                
+                // 🔥 중요: 채널의 roomId와 메시지의 roomId가 일치하는지 확인
+                if (!channelRoomId.equals(dto.getRoomId())) {
+                    log.warn("[{}][RedisMessageBroker] 채널과 메시지 roomId 불일치 - channelRoomId={}, messageRoomId={}, 메시지 무시", 
+                            instanceId, channelRoomId, dto.getRoomId());
+                    return;
+                }
+                
+                // 🔥 추가 검증: 메시지의 roomId가 유효한지 확인
+                if (dto.getRoomId() == null || dto.getRoomId().trim().isEmpty()) {
+                    log.warn("[{}][RedisMessageBroker] 메시지 roomId가 비어있음 - 메시지 무시", instanceId);
+                    return;
+                }
+                
                 String dest = "/topic/chat/room/" + dto.getRoomId();    // 프론트 구독 경로
                 messagingTemplate.convertAndSend(dest, dto);
-                log.info("[{}][RedisMessageBroker] WebSocket 전송 완료 -> dest={}, msgId={}", 
-                        instanceId, dest, dto.getMessageId());
+                log.info("[{}][RedisMessageBroker] WebSocket 전송 완료 -> dest={}, msgId={}, roomId={}, channel={}", 
+                        instanceId, dest, dto.getMessageId(), dto.getRoomId(), channel);
             } catch (Exception e) {
                 log.warn("[{}][RedisMessageBroker] ChatMessagePush 파싱 실패, 일반 메시지로 처리: {}", 
                         instanceId, e.getMessage());

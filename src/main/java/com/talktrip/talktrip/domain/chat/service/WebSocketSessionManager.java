@@ -1,6 +1,7 @@
 package com.talktrip.talktrip.domain.chat.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.talktrip.talktrip.domain.chat.dto.response.ChatMessagePush;
 import com.talktrip.talktrip.domain.chat.entity.ChatMessage;
 import com.talktrip.talktrip.domain.chat.repository.ChatRoomMemberRepository;
 import com.talktrip.talktrip.global.redis.RedisMessageBroker;
@@ -267,7 +268,7 @@ public class WebSocketSessionManager {
      * @param roomId 채팅방 ID
      * @param push ChatMessagePush DTO
      */
-    public void sendChatMessagePushToLocalRoom(String roomId, com.talktrip.talktrip.domain.chat.dto.response.ChatMessagePush push) {
+    public void sendChatMessagePushToLocalRoom(String roomId, ChatMessagePush push) {
         try {
             String json = objectMapper.writeValueAsString(push);
             
@@ -306,9 +307,14 @@ public class WebSocketSessionManager {
             });
             
             // 기존 방식과의 호환성을 위해 SimpMessagingTemplate도 사용
-            String dest = "/topic/chat/room/" + roomId;
-            messagingTemplate.convertAndSend(dest, push);
-            log.info("SimpMessagingTemplate으로도 전송 완료 - dest: {}", dest);
+            // Redis 특성상 백엔드에서는 URL 정보를 알 수 없으므로 프론트엔드에서 필터링
+            if (roomId != null && !roomId.trim().isEmpty()) {
+                String dest = "/topic/chat/room/" + roomId;
+                messagingTemplate.convertAndSend(dest, push);
+                log.info("SimpMessagingTemplate으로도 전송 완료 - dest: {}, roomId: {}", dest, roomId);
+            } else {
+                log.warn("roomId가 비어있어서 SimpMessagingTemplate 전송 건너뜀");
+            }
             
             log.info("로컬 세션 ChatMessagePush 전송 완료 - roomId: {}", roomId);
             
@@ -358,9 +364,16 @@ public class WebSocketSessionManager {
             }
             
             // 기존 방식과의 호환성을 위해 SimpMessagingTemplate도 사용
+            // 🔥 roomId가 같은 곳만 pub하도록 조건문 추가
             String dest = "/queue/chat/rooms";
-            messagingTemplate.convertAndSendToUser(userEmail, dest, sidebarUpdate);
-            log.info("SimpMessagingTemplate으로도 사이드바 업데이트 전송 완료 - user: {}, dest: {}", userEmail, dest);
+            
+            // roomId가 유효한 경우에만 메시지 전송
+            if (sidebarUpdate.getRoomId() != null && !sidebarUpdate.getRoomId().trim().isEmpty()) {
+                messagingTemplate.convertAndSendToUser(userEmail, dest, sidebarUpdate);
+                log.info("SimpMessagingTemplate으로도 사이드바 업데이트 전송 완료 - user: {}, dest: {}, roomId: {}", userEmail, dest, sidebarUpdate.getRoomId());
+            } else {
+                log.warn("roomId가 비어있어서 사이드바 업데이트 전송 건너뜀 - user: {}", userEmail);
+            }
             
             log.info("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
             

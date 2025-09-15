@@ -1,17 +1,14 @@
 package com.talktrip.talktrip.global.redis;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.util.ErrorHandler;
 
 import java.util.concurrent.Executor;
@@ -27,37 +24,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 
  * 주요 기능:
  * 1. Redis 메시지 리스너 컨테이너 설정
- * 2. 채팅 메시지 및 방 업데이트 토픽 정의
- * 3. 메시지 처리용 스레드 풀 설정
- * 4. 오류 처리 핸들러 설정
- * 5. 개별 채널 구독/해제 유틸리티 메서드
+ * 2. 메시지 처리용 스레드 풀 설정
+ * 3. 오류 처리 핸들러 설정
  */
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class RedisPubSubConfig {
-
-    //private final ObjectMapper objectMapper; // 공용 ObjectMapper를 주입받음
-
-    /**
-     * 일반 채팅 메시지를 위한 Redis 채널 토픽
-     * 
-     * @return "chat.message" 채널에 대한 토픽
-     */
-    @Bean
-    public ChannelTopic topic() {
-        return new ChannelTopic("chat.message");
-    }
-
-    /**
-     * 채팅방 업데이트 메시지를 위한 Redis 채널 토픽
-     * 
-     * @return "chat.room.update" 채널에 대한 토픽
-     */
-    @Bean
-    public ChannelTopic roomUpdateTopic() {
-        return new ChannelTopic("chat.room.update");
-    }
 
     /**
      * Redis 메시지 처리를 위한 전용 스레드 풀 생성
@@ -177,22 +150,7 @@ public class RedisPubSubConfig {
             this.subscriber = subscriber;
         }
         
-        /**
-         * 특정 채팅방 채널에 구독 추가
-         * 
-         * @param roomId 채팅방 ID
-         */
-        public void subscribeToRoomChannel(String roomId) {
-            try {
-                String channel = "chat:room:" + roomId;
-                container.addMessageListener(subscriber, new ChannelTopic(channel));
-                log.info("[RedisSubscriptionManager] 채팅방 채널 구독 추가: {}", channel);
-            } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 채팅방 채널 구독 실패: roomId={}, error={}", 
-                        roomId, e.getMessage(), e);
-            }
-        }
-        
+
         /**
          * 특정 채팅방 채널에서 구독 해제
          * 
@@ -209,21 +167,7 @@ public class RedisPubSubConfig {
             }
         }
         
-        /**
-         * 특정 사용자 채널에 구독 추가
-         * 
-         * @param userId 사용자 ID
-         */
-        public void subscribeToUserChannel(String userId) {
-            try {
-                String channel = "chat:user:" + userId;
-                container.addMessageListener(subscriber, new ChannelTopic(channel));
-                log.info("[RedisSubscriptionManager] 사용자 채널 구독 추가: {}", channel);
-            } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 사용자 채널 구독 실패: userId={}, error={}", 
-                        userId, e.getMessage(), e);
-            }
-        }
+
         
         /**
          * 특정 사용자 채널에서 구독 해제
@@ -241,21 +185,7 @@ public class RedisPubSubConfig {
             }
         }
         
-        /**
-         * 패턴 기반 구독 추가
-         * 
-         * @param pattern 구독할 패턴 (예: "chat:room:*", "chat:user:*")
-         */
-        public void subscribeToPattern(String pattern) {
-            try {
-                container.addMessageListener(subscriber, new PatternTopic(pattern));
-                log.info("[RedisSubscriptionManager] 패턴 구독 추가: {}", pattern);
-            } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 패턴 구독 실패: pattern={}, error={}", 
-                        pattern, e.getMessage(), e);
-            }
-        }
-        
+
         /**
          * 패턴 기반 구독 해제
          * 
@@ -288,18 +218,6 @@ public class RedisPubSubConfig {
             }
         }
         
-        /**
-         * 현재 구독 상태 확인 (디버깅용)
-         */
-        public void logSubscriptionStatus() {
-            try {
-                log.info("[RedisSubscriptionManager] 현재 구독 상태 확인");
-                // RedisMessageListenerContainer의 내부 상태를 로깅
-                // 실제 구현에서는 더 자세한 정보를 제공할 수 있음
-            } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 구독 상태 확인 실패: error={}", e.getMessage(), e);
-            }
-        }
-    }
 
+    }
 }
