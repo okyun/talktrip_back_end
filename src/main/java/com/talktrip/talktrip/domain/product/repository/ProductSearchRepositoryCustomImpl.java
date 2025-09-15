@@ -1,4 +1,3 @@
-// (전체 클래스 그대로 교체)
 package com.talktrip.talktrip.domain.product.repository;
 
 import com.querydsl.core.BooleanBuilder;
