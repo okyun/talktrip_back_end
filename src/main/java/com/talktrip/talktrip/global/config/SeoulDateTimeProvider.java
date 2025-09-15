@@ -2,7 +2,6 @@ package com.talktrip.talktrip.global.config;
 
 import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import org.springframework.data.auditing.DateTimeProvider;
-import org.springframework.stereotype.Component;
 
 import java.time.temporal.TemporalAccessor;
 import java.util.Optional;
@@ -12,7 +11,6 @@ import java.util.Optional;
  * 
  * @CreatedDate와 @LastModifiedDate가 서울 시간대를 사용하도록 설정
  */
-@Component
 public class SeoulDateTimeProvider implements DateTimeProvider {
 
     @Override
