@@ -2,13 +2,12 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
 
-// 실행 옵션: 1 VU, 10분 동안 실행 (느린 응답 대비)
 export const options = {
-    vus: 1,
-    duration: '10s',
+    vus: 100,
+    duration: '1m',
     thresholds: {
         http_req_failed: ['rate<0.01'],
-        product_list_ms: ['p(99)<300000'],   // 99% 5분 미만
+        product_list_ms: ['p(95)<1200'],
     },
 };
 
@@ -18,7 +17,7 @@ const listCount = new Counter('product_list_count');
 
 export default function () {
     const base = __ENV.BASE_URL || 'http://localhost:8080';
-    const keyword = __ENV.KEYWORD || '';
+    const keyword = __ENV.KEYWORD || '일본 힐링 여행';
     const country = encodeURIComponent(__ENV.COUNTRY || '전체');
     const size = __ENV.SIZE || '9';
     const page = __ENV.PAGE || '0';
