@@ -19,8 +19,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.SliceImpl;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.*;
@@ -46,16 +46,15 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
     private static final int MIN_PRELIMIT = 800;
     private static final int MAX_PRELIMIT = 6000;
 
-    // ===== 희귀 토큰 기반 FTS 프리필터링 설정 =====
-    // 총 문서 수 대략치(운영에선 캐시/환경변수/테이블 카운트 캐싱 권장)
-    private static final int TOTAL_DOCS_APPROX = 10_000_000;
-    // 희귀 기준: 전체의 1.5% 또는 절대 150k 이하
-    private static final double RARE_RATIO = 0.015;
-    private static final int RARE_ABS_FLOOR = 150_000;
-    // FTS에 넣을 희귀 토큰 최대 개수 (너무 많으면 오히려 느려짐)
+    // ===== 희소 토큰 기반 FTS 프리필터링 설정 =====
+    // FTS 시드로 선택할 최대 개수
     private static final int MAX_FTS_TOKENS = 4;
-    // 후보군 목표 상한(DF 추정으로 이 값 밑으로 떨어질 때까지 희귀 토큰 추가)
-    private static final int CAND_TARGET = 250_000;
+    // 토큰 희소도 빠른 추정 시 상한 샘플 수(실쿼리 LIMIT)
+    private static final int PROBE_LIMIT = 1000;
+    // “희소하다”고 볼 만한 프로브 히트 임계치(튜닝 포인트)
+    private static final int PROBE_HIT_TARGET = 300;
+    // 환경에 맞게: CJK도 FULLTEXT(n-gram) 인덱스가 있다면 true
+    private static final boolean USE_CJK_FTS = true;
 
     // ---------- token utils ----------
     private static List<String> tokensOf(String keyword) {
@@ -66,9 +65,11 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         if (s == null || s.isEmpty()) return false;
         for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
-            var us = Character.UnicodeScript.of(ch);
-            if (us == Character.UnicodeScript.HANGUL || us == Character.UnicodeScript.HAN
-                    || us == Character.UnicodeScript.HIRAGANA || us == Character.UnicodeScript.KATAKANA) return true;
+            Character.UnicodeScript us = Character.UnicodeScript.of(ch);
+            if (us == Character.UnicodeScript.HANGUL
+                    || us == Character.UnicodeScript.HAN
+                    || us == Character.UnicodeScript.HIRAGANA
+                    || us == Character.UnicodeScript.KATAKANA) return true;
         }
         return false;
     }
@@ -83,7 +84,7 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
                 })
                 .map(s -> s.toLowerCase(Locale.ROOT))
                 .distinct()
-                .limit(5) // 과도한 키워드 남용 방지
+                .limit(5) // 과도한 키워드 남용 방지(최대 5개 유지)
                 .toList();
     }
     private static String toEscapedContainsPattern(String token) {
@@ -99,9 +100,6 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         }
         return sb.toString().trim();
     }
-
-    // **CJK면 무조건 FTS 비선호** 규칙을 완화:
-    // → DF가 낮으면(CJK라도) FTS 후보축소에 적극 활용
     private static boolean cjkLikelyExpensiveForBoolean(String token) {
         return token != null && !token.isBlank() && containsCJK(token);
     }
@@ -112,6 +110,39 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
             q.setParameter("n", name);
             return !q.getResultList().isEmpty();
         } catch (Exception e) { return false; }
+    }
+
+    // ====== 빠른 히트수 프로브(저비용) & 제로-히트 확인 ======
+    private int probeHits(String token, boolean hasCountryFilter, String countryName) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("SELECT p.id FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
+            if (hasCountryFilter) sb.append("AND p.country_name_cached = :countryName ");
+            sb.append("AND INSTR(p.search_text, :tok) > 0 ");
+            sb.append("ORDER BY p.updated_at DESC, p.id DESC LIMIT :plim");
+            Query q = entityManager.createNativeQuery(sb.toString());
+            if (hasCountryFilter) q.setParameter("countryName", countryName);
+            q.setParameter("tok", token);
+            q.setParameter("plim", PROBE_LIMIT);
+            return q.getResultList().size(); // 0..PROBE_LIMIT
+        } catch (Exception e) {
+            return PROBE_LIMIT; // 실패시 최악치
+        }
+    }
+    private boolean existsTokenFast(String token, boolean hasCountryFilter, String countryName) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("SELECT 1 FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
+            if (hasCountryFilter) sb.append("AND p.country_name_cached = :countryName ");
+            sb.append("AND INSTR(p.search_text, :tok) > 0 LIMIT 1");
+            Query q = entityManager.createNativeQuery(sb.toString());
+            if (hasCountryFilter) q.setParameter("countryName", countryName);
+            q.setParameter("tok", token);
+            return !q.getResultList().isEmpty();
+        } catch (Exception e) {
+            // 실패 시 보수적으로 존재한다고 가정(검색 실패 방지)
+            return true;
+        }
     }
 
     // ================== 상세 조회 ==================
@@ -279,12 +310,11 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         boolean needRating = "rating".equals(key);
         boolean needMinPrice = "minPrice".equals(key);
 
-        // 커서 적용 여부(모두 채워졌을 때만 WHERE에 추가)
         boolean useCursorOnRating    = needRating && lastAvgStar != null && lastUpdatedAt != null && lastId != null;
         boolean useCursorOnPrice     = needMinPrice && lastMinPrice != null && lastUpdatedAt != null && lastId != null;
         boolean useCursorOnUpdatedAt = "updatedAt".equals(key) && lastUpdatedAt != null && lastId != null;
 
-        // 키워드 없음
+        // 키워드 없음 → 캐시 컬럼만으로 정렬/커서
         if (!hasKeyword) {
             StringBuilder sql = new StringBuilder();
             sql.append("SELECT p.id FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
@@ -360,18 +390,22 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         }
 
         // ---------- 다중 키워드 ----------
-        // 1) DF 로드 & 희귀 토큰 선택
-        Map<String, Integer> dfMap = loadDfMap(tokens);
-        List<String> rareTokens = pickRareTokens(tokens, dfMap);
-        List<String> ftsTokens = chooseFtsTokensByTarget(rareTokens, dfMap, CAND_TARGET, MAX_FTS_TOKENS);
+        // 0) 제로-히트 토큰이 하나라도 있으면 바로 빈 결과 반환(최종 AND 필터 기준)
+        for (String t : tokens) {
+            if (!existsTokenFast(t, hasCountryFilter, cn)) {
+                return List.of();
+            }
+        }
+
+        // 1) 프로브 기반으로 희소 토큰을 뽑아 FTS 시드로 사용
+        List<String> ftsTokens = chooseFtsSeedsByProbe(tokens, hasCountryFilter, cn);
 
         if (!ftsTokens.isEmpty()) {
-            // (A) 희귀 토큰들로 FTS 후보 축소 → 최종 AND는 INSTR로 모든 토큰 검증
+            // (A) 희소 토큰들로 FTS 후보 축소 → 최종 AND는 INSTR로 전체 토큰 검증
             StringBuilder cand = new StringBuilder();
             cand.append("SELECT b.id FROM product b WHERE b.deleted=false AND b.has_future_stock=1 ");
             if (hasCountryFilter) cand.append("AND b.country_name_cached = :countryName ");
             cand.append("AND MATCH(b.search_text) AGAINST (:ftq IN BOOLEAN MODE) ");
-            // 커서 조건(후보에도 동일 적용해 스캔량 감소; 정합성 OK)
             if (useCursorOnRating) {
                 cand.append(" AND (b.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
                         .append("  OR (b.avg_review_star_cached = :lastM AND (b.updated_at < :lastUpdatedAt ")
@@ -390,7 +424,6 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
                     .append("JOIN (").append(cand).append(") s ON s.id = p.id ")
                     .append("WHERE p.deleted=false AND p.has_future_stock=1 ");
             if (hasCountryFilter) sql.append("AND p.country_name_cached = :countryName ");
-            // 모든 토큰 검증(INSTR: 와일드카드/이스케이프 불필요, CJK에도 효율적)
             for (int i = 0; i < tokens.size(); i++) {
                 sql.append(" AND INSTR(p.search_text, :tok").append(i).append(") > 0 ");
             }
@@ -409,7 +442,7 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
             return toLongIds(q.getResultList());
         }
 
-        // (B) DF 미가용/희귀 토큰 부재 → 기존 안정 경로: LIKE AND
+        // (B) 희소 토큰 없음 → 기존 안정 경로: LIKE AND (ESCAPE 포함)
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT p.id FROM product p WHERE p.deleted=false AND p.has_future_stock=1 ");
         if (hasCountryFilter) sql.append("AND p.country_name_cached = :countryName ");
@@ -445,7 +478,7 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         return toLongIds(q.getResultList());
     }
 
-    // --------- 후보 프리리밋 + 바깥 INSTR/LIKE (단일 CJK용) ---------
+    // --------- 후보 프리리밋 + 바깥 INSTR (단일 CJK용) ---------
     private List<Long> runInstrTopNForSingle(
             String token, String cn, boolean hasCountryFilter,
             java.time.LocalDateTime lastUpdatedAt, Long lastId,
@@ -456,11 +489,9 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
     ) {
         int preLimit = Math.min(MAX_PRELIMIT, Math.max((size + 1) * 100, MIN_PRELIMIT));
 
-        // 1) 후보 집합: 정렬 인덱스(updated_at, id)로 상위 N개만 확보 (+ 동일 커서 조건 포함)
         StringBuilder cand = new StringBuilder();
         cand.append("SELECT b.id FROM product b WHERE b.deleted=false AND b.has_future_stock=1 ");
         if (hasCountryFilter) cand.append("AND b.country_name_cached = :countryName ");
-
         if (useCursorOnRating) {
             cand.append(" AND (b.avg_review_star_cached ").append(desc ? "<" : ">").append(" :lastM ")
                     .append("  OR (b.avg_review_star_cached = :lastM AND (b.updated_at < :lastUpdatedAt ")
@@ -473,11 +504,9 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
             cand.append(" AND (b.updated_at ").append(desc ? "<" : ">").append(" :lastUpdatedAt ")
                     .append("  OR (b.updated_at = :lastUpdatedAt AND b.id < :lastId))");
         }
-
         cand.append(" ORDER BY b.updated_at ").append(desc ? "DESC" : "ASC").append(", b.id DESC ");
         cand.append(" LIMIT :preLimit ");
 
-        // 2) 본문: 후보와 조인 후 INSTR/LIKE 필터링
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT p.id FROM product p ")
                 .append("JOIN (").append(cand).append(") s ON s.id = p.id ")
@@ -533,66 +562,38 @@ public class ProductSearchRepositoryCustomImpl implements ProductSearchRepositor
         }
     }
 
-    // ===== DF 로드 & 희귀 토큰 선택 =====
-    private Map<String, Integer> loadDfMap(List<String> tokens) {
-        if (tokens == null || tokens.isEmpty()) return Map.of();
-        try {
-            StringBuilder sql = new StringBuilder("SELECT token, df FROM product_ft_df WHERE token IN (");
-            for (int i = 0; i < tokens.size(); i++) {
-                if (i > 0) sql.append(",");
-                sql.append(":t").append(i);
-            }
-            sql.append(")");
-            Query q = entityManager.createNativeQuery(sql.toString());
-            for (int i = 0; i < tokens.size(); i++) q.setParameter("t" + i, tokens.get(i));
-            List<?> rows = q.getResultList();
-            Map<String, Integer> map = new HashMap<>();
-            for (Object row : rows) {
-                if (row instanceof Object[] arr && arr.length >= 2) {
-                    String tok = String.valueOf(arr[0]);
-                    Integer df = ((Number) arr[1]).intValue();
-                    map.put(tok, df);
-                }
-            }
-            return map;
-        } catch (Exception e) {
-            // 테이블 없거나 권한 이슈 → 빈 맵(폴백 경로 사용)
-            return Map.of();
-        }
-    }
+    // ===== 프로브 기반 FTS 시드 선정(DF 테이블 없이 동작) =====
+    private List<String> chooseFtsSeedsByProbe(List<String> tokens, boolean hasCountryFilter, String countryName) {
+        if (tokens == null || tokens.isEmpty()) return List.of();
 
-    private List<String> pickRareTokens(List<String> tokens, Map<String, Integer> dfMap) {
-        if (tokens.isEmpty() || dfMap.isEmpty()) return List.of();
-        int rareThreshold = Math.max(RARE_ABS_FLOOR, (int) Math.round(TOTAL_DOCS_APPROX * RARE_RATIO));
-        List<String> rares = new ArrayList<>();
+        // CJK FTS 허용이 아니면 CJK 토큰은 시드 후보에서 제외
+        List<Map.Entry<String,Integer>> ranked = new ArrayList<>();
         for (String t : tokens) {
-            Integer df = dfMap.get(t);
-            if (df != null && df <= rareThreshold) rares.add(t);
+            if (!USE_CJK_FTS && containsCJK(t)) continue;
+            int hits = probeHits(t, hasCountryFilter, countryName);
+            ranked.add(new AbstractMap.SimpleEntry<>(t, hits));
         }
-        // DF 오름차순으로 정렬(더 희귀한 것부터)
-        rares.sort(Comparator.comparingInt(dfMap::get));
-        return rares;
-    }
+        if (ranked.isEmpty()) return List.of();
 
-    private List<String> chooseFtsTokensByTarget(
-            List<String> rareTokens, Map<String, Integer> dfMap, int target, int maxTokens
-    ) {
-        if (rareTokens.isEmpty()) return List.of();
-        long est = TOTAL_DOCS_APPROX;
+        // 희소(히트수 적은) 순으로 정렬
+        ranked.sort(Comparator.comparingInt(Map.Entry::getValue));
+
+        // 가장 희소한 것부터 최대 MAX_FTS_TOKENS개, 최소추정(=min hits)이 목표 이하가 될 때까지 선택
+        int est = Integer.MAX_VALUE;
         List<String> chosen = new ArrayList<>();
-        for (String tok : rareTokens) {
-            if (chosen.size() >= maxTokens) break;
-            Integer df = dfMap.get(tok);
-            if (df == null) continue;
-            // BOOLEAN AND 교집합의 상한은 min(df)로 수렴한다고 가정하여 간단히 사용
-            est = Math.min(est, df.longValue());
-            chosen.add(tok);
-            if (est <= target) break;
+        for (Map.Entry<String,Integer> e : ranked) {
+            if (chosen.size() >= MAX_FTS_TOKENS) break;
+            est = Math.min(est, e.getValue());
+            chosen.add(e.getKey());
+            if (est <= PROBE_HIT_TARGET) break;
         }
+
+        // 만약 모두 고빈도라면(=est가 여전히 큼) 시드를 비워서 FTS 경로를 타지 않게 한다
+        if (chosen.isEmpty() || est > PROBE_HIT_TARGET) return List.of();
         return chosen;
     }
 
-    // 네이티브 결과 안전 캐스팅(hibernate가 BigInteger 등으로 반환해도 대응)
+    // 네이티브 결과 안전 캐스팅
     private static List<Long> toLongIds(List<?> rows) {
         if (rows == null || rows.isEmpty()) return List.of();
         List<Long> out = new ArrayList<>(rows.size());
