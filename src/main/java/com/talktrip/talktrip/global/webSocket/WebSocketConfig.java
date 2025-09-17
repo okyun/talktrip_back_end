@@ -43,6 +43,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .setStreamBytesLimit(2 * 1024 * 1024)  // 2MB로 증가
                 .setHttpMessageCacheSize(1000)
                 .setSessionCookieNeeded(false);
+        
+        // 네이티브 WebSocket 엔드포인트 추가
+        registry.addEndpoint("/ws/websocket")
+                .setAllowedOrigins("http://localhost:5173")
+                .addInterceptors(handshakeInterceptor);
     }
 
     @Override
