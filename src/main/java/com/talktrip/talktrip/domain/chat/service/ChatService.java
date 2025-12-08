@@ -67,7 +67,7 @@ public class ChatService {
     private final StringRedisTemplate stringRedisTemplate;
     private final WebSocketSessionManager webSocketSessionManager;
     private final ChatMessageSequenceService chatMessageSequenceService;
-
+    private final ChatMessageCacheService chatMessageCacheService;
 
     /**
      * 채팅 메시지 저장 및 전송 - 관련 캐시 무효화
@@ -81,33 +81,24 @@ public class ChatService {
     @Transactional
     public void saveAndSend(ChatMessageRequestDto dto, Principal principal) {
         try {
-            // Redis 연결 상태 미리 확인 (메시지 저장 전에 체크)
             if (!isRedisAvailable()) {
                 log.error("Redis 연결이 불가능합니다.");
                 throw new RuntimeException("Redis 서버에 연결할 수 없습니다.");
             }
             final String sender = principal.getName();
-            
-            // 테스트용: 특정 메시지로 에러 발생 (실제 운영에서는 제거)
+
             if (dto.getMessage() != null && dto.getMessage().contains("테스트에러")) {
                 throw new RuntimeException("테스트용 에러: 메시지에 '테스트에러'가 포함되어 있습니다.");
             }
 
-            // (선택) 권한 체크
-            // if (!chatRoomMemberRepository.existsByRoomIdAndAccountEmail(dto.getRoomId(), sender)) {
-            //     throw new AccessDeniedException("Not a member of this room");
-            // }
-
-            // 1) Redis 기반 채팅방 시퀀스 생성 (원자적 연산)
+            // 1) 시퀀스 + DB 저장
             Long sequenceNumber = chatMessageSequenceService.getNextSequence(dto.getRoomId());
-
-            // 2) DB 저장 (시퀀스 번호 포함)
             ChatMessage entity = chatMessageRepository.save(dto.toEntity(sender, sequenceNumber));
-            
-            // 2) ChatRoom의 updatedAt 업데이트 (최신 메시지 시간으로)
+
+            // 2) 채팅방 updatedAt 갱신
             chatRoomRepository.updateUpdatedAt(dto.getRoomId(), entity.getCreatedAt());
 
-            // 2) 방 브로드캐스트 payload
+            // 3) push DTO
             ChatMessagePush push = ChatMessagePush.builder()
                     .messageId(entity.getMessageId())
                     .roomId(entity.getRoomId())
@@ -117,42 +108,60 @@ public class ChatService {
                     .createdAt(String.valueOf(entity.getCreatedAt()))
                     .build();
 
-            // 3) 개인 사이드바 payload들 미리 계산 (트랜잭션 안에서 조회 OK)
+            // 4) 멤버 이메일 조회
             List<String> memberEmails = chatRoomMemberRepository
                     .findAllAccountEmailsByRoomId(dto.getRoomId())
                     .stream().map(ChatRoomAccount::getAccountEmail).toList();
 
+            // 5) 사이드바 DTO (여기는 DB 기반 unread 사용)
             List<ChatRoomUpdateMessage> sidebars = new ArrayList<>(memberEmails.size());
+
             for (String email : memberEmails) {
                 int unreadForThisUser = email.equals(sender)
                         ? 0
                         : chatMessageRepository.countUnreadMessagesByRoomIdAndMemberId(dto.getRoomId(), email);
 
                 sidebars.add(ChatRoomUpdateMessage.builder()
-                        .accountEmail(email)                    // 수신자 이메일 (누가 받을지)
+                        .accountEmail(email)
                         .roomId(dto.getRoomId())
                         .messageId(entity.getMessageId())
                         .message(entity.getMessage())
-                        .senderAccountEmail(sender)             // 발신자 이메일
+                        .senderAccountEmail(sender)
                         .createdAt(entity.getCreatedAt())
-                        .notReadMessageCount(unreadForThisUser) // 읽지 않은 메시지 개수
-                        .receiverAccountEmail(email)            // 수신자 이메일 (중복이지만 필수 필드)
+                        .notReadMessageCount(unreadForThisUser)
+                        .receiverAccountEmail(email)
                         .updatedAt(SeoulTimeUtil.nowAsTimestamp())
-                        .unreadCountForSender(0)                // 발신자는 항상 0
+                        .unreadCountForSender(0)
                         .unreadCountForReceiver(unreadForThisUser)
                         .build());
             }
 
-            // 4) 로컬 세션에 즉시 전송 (실시간 응답성 보장)
+            // 6) 로컬 세션에 즉시 전송
             sendToLocalSessions(dto.getRoomId(), push);
-            
-            // 5) 로컬 세션에 사이드바 업데이트 즉시 전송
             sendSidebarUpdatesToLocalSessions(memberEmails, sidebars);
 
-            // 5) ❗ DB 커밋이 "성공한 뒤에만" Redis로 다른 서버 인스턴스에 브로드캐스트
+            // 7) ✅ 여기서부터는 "커밋 이후(afterCommit)에만" 캐시 + 브로드캐스트
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() {
-                    publishToRedis(dto, push, memberEmails, sidebars);
+                @Override
+                public void afterCommit() {
+                    try {
+                        // 7-1) lastMessage 캐싱
+                        chatMessageCacheService.cacheLastMessage(entity);
+
+                        // 7-2) 수신자 unread INCR
+                        for (String email : memberEmails) {
+                            if (!email.equals(sender)) {
+                                chatMessageCacheService.incrementUnread(dto.getRoomId(), email);
+                            }
+                        }
+
+                        // 7-3) Redis 브로드캐스트 (다른 인스턴스용)
+                        publishToRedis(dto, push, memberEmails, sidebars);
+
+                    } catch (Exception ex) {
+                        log.error("afterCommit에서 Redis 관련 처리 실패 - roomId: {}, error: {}",
+                                dto.getRoomId(), ex.getMessage(), ex);
+                    }
                 }
             });
 
@@ -167,7 +176,6 @@ public class ChatService {
             throw new RuntimeException("채팅 처리 중 오류가 발생했습니다: " + e.getMessage());
         }
 
-        // (선택) 기타 후처리
         chatRoomMemberRepository.resetIsDelByRoomId(dto.getRoomId());
     }
 
@@ -618,13 +626,24 @@ public class ChatService {
         // WHERE room_id = :roomId AND account_email = :accountEmail 조건으로 필터링
         // 서울 시간대를 사용하여 읽음 처리
         int updatedRows = chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail, SeoulTimeUtil.now());
-        
+
+        // 🔥 커밋 후에만 Redis 클리어
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                chatMessageCacheService.clearUnread(roomId, accountEmail);
+            }
+        });
+
+
         if (updatedRows == 0) {
             log.warn("읽음 처리 실패 - 사용자: {}, 채팅방: {} (WHERE 조건에 맞는 레코드가 없음)", accountEmail, roomId);
             throw new RuntimeException("읽음 처리에 실패했습니다. 해당 사용자가 채팅방의 멤버가 아닙니다.");
         } else {
             log.info("읽음 처리 완료 - 사용자: {}, 채팅방: {}, 업데이트된 행: {}", accountEmail, roomId, updatedRows);
         }
+
+
     }
 
     /**
