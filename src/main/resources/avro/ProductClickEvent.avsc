@@ -1,0 +1,28 @@
+{
+  "type": "record",
+  "name": "ProductClickEvent",
+  "namespace": "com.talktrip.talktrip.avro",
+  "doc": "상품 클릭 이벤트 (15분 단위 집계용)",
+  "fields": [
+    {
+      "name": "productId",
+      "type": "long",
+      "doc": "클릭된 상품 ID"
+    },
+    {
+      "name": "memberId",
+      "type": ["null", "long"],
+      "default": null,
+      "doc": "클릭한 회원 ID (비회원이면 null)"
+    },
+    {
+      "name": "clickedAt",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "클릭 시각 (UTC millis)"
+    }
+  ]
+}
+
