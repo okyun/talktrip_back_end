@@ -31,13 +31,13 @@ public class ChatMessageCacheService {
 
     // --- lastMessage 캐싱 (HSET) ---
 
-    public void cacheLastMessage(ChatMessage message) {
+    public void cacheLastMessage(ChatMessage message,String sender) {
         try {
             String key = lastMessageKey(message.getRoomId());
 
             redisTemplate.opsForHash().put(key, "messageId", message.getMessageId());
             redisTemplate.opsForHash().put(key, "roomId", message.getRoomId());
-            redisTemplate.opsForHash().put(key, "accountEmail", message.getAccountEmail());
+            redisTemplate.opsForHash().put(key, "sender", sender);
             redisTemplate.opsForHash().put(key, "content", message.getMessage());
             redisTemplate.opsForHash().put(key, "createdAt", message.getCreatedAt().toString());
 
@@ -65,7 +65,6 @@ public class ChatMessageCacheService {
     }
 
     // --- 읽음 처리 시 unreadCount 초기화 (0으로 설정 or 삭제) ---
-
     public void clearUnread(String roomId, String email) {
         try {
             String key = unreadKey(roomId, email);
@@ -78,19 +77,5 @@ public class ChatMessageCacheService {
                     roomId, email, e.getMessage());
         }
     }
-    // --- unreadCount 조회 (캐시 우선, 없으면 null) ---
-    public Integer getUnread(String roomId, String email) {
-        try {
-            String key = unreadKey(roomId, email);
-            String value = stringRedisTemplate.opsForValue().get(key);
-            if (value == null) {
-                return null;
-            }
-            return Integer.parseInt(value);
-        } catch (Exception e) {
-            log.warn("Redis unreadCount GET 실패 - roomId: {}, email: {}, error: {}",
-                    roomId, email, e.getMessage());
-            return null; // 실패하면 캐시 포기하고 DB fallback
-        }
-    }
+
 }

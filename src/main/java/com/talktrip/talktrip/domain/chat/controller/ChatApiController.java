@@ -2,6 +2,7 @@ package com.talktrip.talktrip.domain.chat.controller;
 
 import com.talktrip.talktrip.domain.chat.dto.request.ChatRoomRequestDto;
 import com.talktrip.talktrip.domain.chat.dto.response.*;
+import com.talktrip.talktrip.domain.chat.service.ChatRoomQueryService;
 import com.talktrip.talktrip.domain.chat.service.ChatService;
 import com.talktrip.talktrip.global.dto.SliceResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +22,7 @@ import java.util.Map;
 public class ChatApiController {
 
     private final ChatService chatService;
+    private final ChatRoomQueryService chatRoomQueryService;
 
     @Operation(summary = "채팅방 접속")
     @PostMapping
@@ -35,7 +37,7 @@ public class ChatApiController {
             @RequestParam(required = false) String cursor
     ) {
         String accountEmail = principal.getName();
-        return chatService.getRooms(accountEmail, limit, cursor);
+        return chatRoomQueryService.getRooms(accountEmail, limit, cursor);
     }
 
     @Operation(summary = "내 채팅 목록 (전체 - 기존 호환성)")
@@ -44,7 +46,7 @@ public class ChatApiController {
             Principal principal,
             @RequestParam(required = false) String roomType) {
         String accountEmail = principal.getName();
-        return chatService.getAllRooms(accountEmail, roomType);
+        return chatRoomQueryService.getAllRooms(accountEmail, roomType);
     }
 
     @Operation(summary = "채팅방 메시지 조회 (includeMessages=true: 첫 페이지, false: 무한스크롤)")
@@ -72,7 +74,7 @@ public class ChatApiController {
     @Operation(summary = "안읽은 모든 채팅갯수")
     @GetMapping("/countALLUnreadMessages")
     public Map<String, Integer> getCountAllUnreadMessages(Principal principal) {
-        int count = chatService.getCountAllUnreadMessages(principal.getName());//실시간으로 나오게
+        int count = chatRoomQueryService.getCountAllUnreadMessages(principal.getName());//실시간으로 나오게
         return Map.of("count", count);
     }
     @Operation(summary = "채팅방 입장 또는 생성")
@@ -96,4 +98,9 @@ public class ChatApiController {
         return ResponseEntity.noContent().build(); // 204 No Content
     }
 
+
+//    ChatService – “행위(Command)” 중심
+//    ChatRoomQueryService – “조회(Query)” 중심
+//    ChatMessageSequenceService – “메시지 순서 번호 발급기”
+//    ChatMessageCacheService – “Redis 캐시/핫데이터 관리”
 }
