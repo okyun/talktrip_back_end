@@ -18,10 +18,12 @@ import com.talktrip.talktrip.domain.order.repository.OrderRepository;
 import com.talktrip.talktrip.domain.order.repository.PaymentRepository;
 import com.talktrip.talktrip.domain.product.entity.Product;
 import com.talktrip.talktrip.domain.product.entity.ProductOption;
-import com.talktrip.talktrip.domain.product.repository.ProductOptionRepository;
 import com.talktrip.talktrip.domain.product.repository.ProductRepository;
+import com.talktrip.talktrip.domain.product.service.StockService;
+import com.talktrip.talktrip.domain.order.event.OrderEventPublisher;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.json.simple.JSONObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,17 +38,19 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class OrderService {
 
     private final ProductRepository productRepository;
-    private final ProductOptionRepository productOptionRepository;
     private final MemberRepository memberRepository;
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final CardPaymentRepository cardPaymentRepository;
+    private final OrderEventPublisher orderEventPublisher;
+    private final StockService stockService;
 
     public OrderResponseDTO createOrder(Long productId, OrderRequestDTO orderRequest, Long memberId) {
 
@@ -58,17 +62,11 @@ public class OrderService {
 
         List<OrderItem> orderItems = orderRequest.getOptions().stream()
                 .map(optReq -> {
-                    // 재고 확인 및 차감
-                    ProductOption productOption = productOptionRepository.findById(optReq.getProductOptionId())
-                            .orElseThrow(() -> new IllegalArgumentException("옵션을 찾을 수 없습니다: " + optReq.getProductOptionId()));
-
-                    // 재고 확인
-                    if (productOption.getStock() < optReq.getQuantity()) {
-                        throw new IllegalStateException("재고 부족: " + productOption.getOptionName());
-                    }
-
-                    // 재고 차감 (주문 생성 시점에 미리 차감)
-                    productOption.setStock(productOption.getStock() - optReq.getQuantity());
+                    // 재고 확인 및 차감 (StockService를 통해 처리)
+                    ProductOption productOption = stockService.checkStockAndDecrease(
+                            optReq.getProductOptionId(), 
+                            optReq.getQuantity()
+                    );
 
                     // 스냅샷으로 OrderItem 생성
                     return OrderItem.createOrderItem(
@@ -103,6 +101,15 @@ public class OrderService {
         orderItems.forEach(order::addOrderItem);
 
         orderRepository.save(order);
+
+        // 주문 생성 이벤트 발행
+        try {
+            orderEventPublisher.publishOrderCreated(order);
+            log.info("주문 생성 이벤트 발행 완료: orderId={}, orderCode={}", order.getId(), order.getOrderCode());
+        } catch (Exception e) {
+            log.error("주문 생성 이벤트 발행 실패: orderId={}, orderCode={}", order.getId(), order.getOrderCode(), e);
+            // 이벤트 발행 실패는 주문 생성 자체를 롤백하지 않음 (비동기 처리)
+        }
 
         return new OrderResponseDTO(
                 order.getOrderCode(),
@@ -299,7 +306,7 @@ public class OrderService {
 
         // 재고 복원 (스냅샷 패턴에서는 취소 시에만 재고를 복원)
         for (OrderItem item : order.getOrderItems()) {
-            item.restoreStock(productOptionRepository);
+            stockService.restoreStock(item.getProductOptionId(), item.getQuantity());
         }
 
         order.cancel();
