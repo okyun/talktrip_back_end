@@ -21,7 +21,6 @@ import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -56,19 +55,18 @@ public class KafkaConfig {
      */
     @Bean
     public ConsumerFactory<String, OrderEvent> orderEventConsumerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        
         // ErrorHandlingDeserializer - 역직렬화 실패 시 애플리케이션 종료 방지, 잘못된 JSON 방식 처리
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
-        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-        
-        // 메시지 포맷이 잘못되어도 consumer 중단하지 않는 형태
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, OrderEvent.class);
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "*"); // 전체 path 허용
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class),
+                Map.entry(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class),
+                Map.entry(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class),
+                Map.entry(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class),
+                // 메시지 포맷이 잘못되어도 consumer 중단하지 않는 형태
+                Map.entry(JsonDeserializer.VALUE_DEFAULT_TYPE, OrderEvent.class),
+                Map.entry(JsonDeserializer.TRUSTED_PACKAGES, "*"), // 전체 path 허용
+                Map.entry(JsonDeserializer.USE_TYPE_INFO_HEADERS, false)
+        );
         
         return new DefaultKafkaConsumerFactory<>(props);
     }
@@ -95,19 +93,18 @@ public class KafkaConfig {
      */
     @Bean
     public ConsumerFactory<String, ProductEvent> productEventConsumerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        
         // ErrorHandlingDeserializer - 역직렬화 실패 시 애플리케이션 종료 방지, 잘못된 JSON 방식 처리
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
-        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-        
-        // 메시지 포맷이 잘못되어도 consumer 중단하지 않는 형태
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, ProductEvent.class);
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "*"); // 전체 path 허용
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class),
+                Map.entry(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class),
+                Map.entry(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class),
+                Map.entry(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class),
+                // 메시지 포맷이 잘못되어도 consumer 중단하지 않는 형태
+                Map.entry(JsonDeserializer.VALUE_DEFAULT_TYPE, ProductEvent.class),
+                Map.entry(JsonDeserializer.TRUSTED_PACKAGES, "*"), // 전체 path 허용
+                Map.entry(JsonDeserializer.USE_TYPE_INFO_HEADERS, false)
+        );
         
         return new DefaultKafkaConsumerFactory<>(props);
     }
@@ -133,14 +130,15 @@ public class KafkaConfig {
      */
     @Bean
     public ConsumerFactory<String, Object> genericConsumerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
-        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, true);
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class),
+                Map.entry(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class),
+                Map.entry(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class),
+                Map.entry(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class),
+                Map.entry(JsonDeserializer.TRUSTED_PACKAGES, "*"),
+                Map.entry(JsonDeserializer.USE_TYPE_INFO_HEADERS, true)
+        );
         
         return new DefaultKafkaConsumerFactory<>(props);
     }
@@ -165,13 +163,14 @@ public class KafkaConfig {
      */
     @Bean
     public ConsumerFactory<String, GenericRecord> avroConsumerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class);
-        props.put(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
-        props.put(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG, false);
-        props.put(AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS, true);
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class),
+                Map.entry(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, KafkaAvroDeserializer.class),
+                Map.entry(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl),
+                Map.entry(KafkaAvroDeserializerConfig.SPECIFIC_AVRO_READER_CONFIG, false),
+                Map.entry(AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS, true)
+        );
         
         return new DefaultKafkaConsumerFactory<>(props);
     }
@@ -196,14 +195,14 @@ public class KafkaConfig {
      * 타입 정보를 헤더에 추가하여 역직렬화 시 타입을 알 수 있도록 합니다.
      */
     @Bean
-    public ProducerFactory<String, Object> orderEventProducerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
-        
+    public ProducerFactory<String, OrderEvent> orderEventProducerFactory() {
         // 직렬화, 역직렬화를 위한 타입 정보 헤더 추가
-        props.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, true);
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class),
+                Map.entry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class),
+                Map.entry(JsonSerializer.ADD_TYPE_INFO_HEADERS, true)
+        );
         
         return new DefaultKafkaProducerFactory<>(props);
     }
@@ -212,8 +211,35 @@ public class KafkaConfig {
      * OrderEvent 전용 Kafka Template
      */
     @Bean
-    public KafkaTemplate<String, Object> kafkaTemplate() {
+    public KafkaTemplate<String, OrderEvent> kafkaTemplate() {
         return new KafkaTemplate<>(orderEventProducerFactory());
+    }
+
+    /**
+     * ProductEvent 전용 Producer Factory
+     * 
+     * JsonSerializer를 사용하여 ProductEvent를 JSON으로 직렬화합니다.
+     * 타입 정보를 헤더에 추가하여 역직렬화 시 타입을 알 수 있도록 합니다.
+     */
+    @Bean
+    public ProducerFactory<String, ProductEvent> productEventProducerFactory() {
+        // 직렬화, 역직렬화를 위한 타입 정보 헤더 추가
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class),
+                Map.entry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class),
+                Map.entry(JsonSerializer.ADD_TYPE_INFO_HEADERS, true)
+        );
+        
+        return new DefaultKafkaProducerFactory<>(props);
+    }
+
+    /**
+     * ProductEvent 전용 Kafka Template
+     */
+    @Bean
+    public KafkaTemplate<String, ProductEvent> productEventKafkaTemplate() {
+        return new KafkaTemplate<>(productEventProducerFactory());
     }
 
     /**
@@ -229,19 +255,19 @@ public class KafkaConfig {
      */
     @Bean
     public ProducerFactory<String, GenericRecord> avroProducerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
-        props.put(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl);
-        props.put(AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS, true);
-        
         // Producer 안정성 설정
-        props.put(ProducerConfig.ACKS_CONFIG, "1"); // 리더에게 전달 확인
-        props.put(ProducerConfig.RETRIES_CONFIG, 3);
-        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 16384);
-        props.put(ProducerConfig.LINGER_MS_CONFIG, 10);
-        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy"); // 압축 알고리즘: none, lz4, gzip, zstd, snappy
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class),
+                Map.entry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class),
+                Map.entry(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl),
+                Map.entry(AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS, true),
+                Map.entry(ProducerConfig.ACKS_CONFIG, "1"), // 리더에게 전달 확인
+                Map.entry(ProducerConfig.RETRIES_CONFIG, 3),
+                Map.entry(ProducerConfig.BATCH_SIZE_CONFIG, 16384),
+                Map.entry(ProducerConfig.LINGER_MS_CONFIG, 10),
+                Map.entry(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy") // 압축 알고리즘: none, lz4, gzip, zstd, snappy
+        );
         
         return new DefaultKafkaProducerFactory<>(props);
     }
