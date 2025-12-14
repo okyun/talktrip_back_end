@@ -17,7 +17,8 @@ import com.talktrip.talktrip.global.util.CursorUtil;
 import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -52,10 +53,11 @@ import java.util.Optional;
  * - 새 메시지 전송 시 멤버 활성화로 인한 roomDetails 무효화
  * - 새 채팅방 생성 시 existingRooms 캐시 무효화
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ChatService.class);
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -79,7 +81,7 @@ public class ChatService {
     public void saveAndSend(ChatMessageRequestDto dto, Principal principal) {
         try {
             if (!isRedisAvailable()) {
-                log.error("Redis 연결이 불가능합니다.");
+                logger.error("Redis 연결이 불가능합니다.");
                 throw new RuntimeException("Redis 서버에 연결할 수 없습니다.");
             }
             final String sender = principal.getName();
@@ -155,20 +157,20 @@ public class ChatService {
                         publishToRedis(dto, push, memberEmails, sidebars);
 
                     } catch (Exception ex) {
-                        log.error("afterCommit에서 Redis 관련 처리 실패 - roomId: {}, error: {}",
+                        logger.error("afterCommit에서 Redis 관련 처리 실패 - roomId: {}, error: {}",
                                 dto.getRoomId(), ex.getMessage(), ex);
                     }
                 }
             });
 
         } catch (AccessDeniedException e) {
-            log.error("채팅방 접근 권한 없음: {}", e.getMessage(), e);
+            logger.error("채팅방 접근 권한 없음: {}", e.getMessage(), e);
             throw new RuntimeException("채팅방에 접근할 권한이 없습니다.");
         } catch (IllegalArgumentException e) {
-            log.error("잘못된 메시지 데이터: {}", e.getMessage(), e);
+            logger.error("잘못된 메시지 데이터: {}", e.getMessage(), e);
             throw new RuntimeException("잘못된 메시지 형식입니다: " + e.getMessage());
         } catch (Exception e) {
-            log.error("채팅 메시지 저장 및 발행 중 오류 발생: {}", e.getMessage(), e);
+            logger.error("채팅 메시지 저장 및 발행 중 오류 발생: {}", e.getMessage(), e);
             throw new RuntimeException("채팅 처리 중 오류가 발생했습니다: " + e.getMessage());
         }
 
@@ -177,39 +179,39 @@ public class ChatService {
 
     private void sendToLocalSessions(String roomId, ChatMessagePush push) {
         try {
-            log.info("로컬 세션에 즉시 메시지 전송 시작 - roomId: {}, messageId: {}", roomId, push.getMessageId());
+            logger.info("로컬 세션에 즉시 메시지 전송 시작 - roomId: {}, messageId: {}", roomId, push.getMessageId());
             webSocketSessionManager.sendChatMessagePushToLocalRoom(roomId, push);
-            log.info("로컬 세션 즉시 전송 완료 - roomId: {}", roomId);
+            logger.info("로컬 세션 즉시 전송 완료 - roomId: {}", roomId);
         } catch (Exception e) {
-            log.error("로컬 세션 즉시 전송 실패 - roomId: {}, error: {}", roomId, e.getMessage(), e);
+            logger.error("로컬 세션 즉시 전송 실패 - roomId: {}, error: {}", roomId, e.getMessage(), e);
         }
     }
 
     private void sendSidebarUpdatesToLocalSessions(List<String> memberEmails, List<ChatRoomUpdateMessage> sidebars) {
         try {
-            log.info("로컬 세션에 사이드바 업데이트 전송 시작 - 멤버 수: {}", memberEmails.size());
+            logger.info("로컬 세션에 사이드바 업데이트 전송 시작 - 멤버 수: {}", memberEmails.size());
             for (int i = 0; i < memberEmails.size(); i++) {
                 String email = memberEmails.get(i);
                 ChatRoomUpdateMessage sidebar = sidebars.get(i);
                 webSocketSessionManager.sendSidebarUpdateToLocalUser(email, sidebar);
             }
-            log.info("로컬 세션 사이드바 업데이트 전송 완료");
+            logger.info("로컬 세션 사이드바 업데이트 전송 완료");
         } catch (Exception e) {
-            log.error("로컬 세션 사이드바 업데이트 전송 실패: {}", e.getMessage(), e);
+            logger.error("로컬 세션 사이드바 업데이트 전송 실패: {}", e.getMessage(), e);
         }
     }
 
     private void publishToRedis(ChatMessageRequestDto dto, ChatMessagePush push,
                                 List<String> memberEmails, List<ChatRoomUpdateMessage> sidebars) {
         try {
-            log.info("Redis 브로드캐스트 시작 - roomId: {}, 자신 제외", dto.getRoomId());
+            logger.info("Redis 브로드캐스트 시작 - roomId: {}, 자신 제외", dto.getRoomId());
 
             redisMessageBroker.publishToOtherInstances("chat:room:" + dto.getRoomId(), push);
             publishSidebarUpdates(memberEmails, sidebars);
 
-            log.info("Redis 브로드캐스트 완료 - roomId: {}", dto.getRoomId());
+            logger.info("Redis 브로드캐스트 완료 - roomId: {}", dto.getRoomId());
         } catch (Exception e) {
-            log.error("Redis 브로드캐스트 실패: {}", e.getMessage(), e);
+            logger.error("Redis 브로드캐스트 실패: {}", e.getMessage(), e);
         }
     }
 
@@ -226,7 +228,7 @@ public class ChatService {
             stringRedisTemplate.opsForValue().get("health_check");
             return true;
         } catch (Exception e) {
-            log.warn("Redis 연결 확인 실패: {}", e.getMessage());
+            logger.warn("Redis 연결 확인 실패: {}", e.getMessage());
             return false;
         }
     }
@@ -316,10 +318,10 @@ public class ChatService {
         });
 
         if (updatedRows == 0) {
-            log.warn("읽음 처리 실패 - 사용자: {}, 채팅방: {}", accountEmail, roomId);
+            logger.warn("읽음 처리 실패 - 사용자: {}, 채팅방: {}", accountEmail, roomId);
             throw new RuntimeException("읽음 처리에 실패했습니다. 해당 사용자가 채팅방의 멤버가 아닙니다.");
         } else {
-            log.info("읽음 처리 완료 - 사용자: {}, 채팅방: {}, 업데이트된 행: {}",
+            logger.info("읽음 처리 완료 - 사용자: {}, 채팅방: {}, 업데이트된 행: {}",
                     accountEmail, roomId, updatedRows);
         }
     }

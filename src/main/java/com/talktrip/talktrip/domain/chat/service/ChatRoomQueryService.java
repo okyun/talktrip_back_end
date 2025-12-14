@@ -11,22 +11,24 @@ import com.talktrip.talktrip.global.dto.SliceResponse;
 import com.talktrip.talktrip.global.util.CursorUtil;
 import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ChatRoomQueryService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ChatRoomQueryService.class);
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -114,7 +116,7 @@ public class ChatRoomQueryService {
                     .filter(room -> room.getRoomType() == filterType)
                     .toList();
         } catch (IllegalArgumentException e) {
-            log.warn("잘못된 roomType: {}, 전체 목록 반환", roomType);
+            logger.warn("잘못된 roomType: {}, 전체 목록 반환", roomType);
             return allRooms;
         }
     }

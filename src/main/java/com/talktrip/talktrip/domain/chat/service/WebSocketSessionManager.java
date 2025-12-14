@@ -6,7 +6,6 @@ import com.talktrip.talktrip.domain.chat.entity.ChatMessage;
 import com.talktrip.talktrip.domain.chat.repository.ChatRoomMemberRepository;
 import com.talktrip.talktrip.global.redis.RedisMessageBroker;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.WebSocketSession;
@@ -16,11 +15,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
-public class WebSocketSessionManager { 
+public class WebSocketSessionManager {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketSessionManager.class); 
 
     private final RedisTemplate<String,Object> redisTemplate;
     private final ObjectMapper objectMapper;
@@ -56,7 +58,7 @@ public class WebSocketSessionManager {
      */
     @PostConstruct
     public void initialize() {
-        log.info("WebSocketSessionManager 초기화 시작");
+        logger.info("WebSocketSessionManager 초기화 시작");
         
         // RedisMessageBroker에 로컬 메시지 핸들러 설정
         // 다른 서버에서 발행된 메시지를 현재 서버의 WebSocket 클라이언트들에게 전달하는 역할
@@ -70,7 +72,7 @@ public class WebSocketSessionManager {
              */
             @Override
             public void handleLocalMessage(String topic, Object message, String messageId) {
-                log.info("로컬 메시지 핸들러 호출 - Topic: {}, Message: {}, MessageId: {}", topic, message, messageId);
+                logger.info("로컬 메시지 핸들러 호출 - Topic: {}, Message: {}, MessageId: {}", topic, message, messageId);
                 
                 // 채팅방 토픽에서 roomId 추출 (chat:room:roomId 형태)
                 if (topic != null && topic.startsWith("chat:room:")) {
@@ -80,10 +82,10 @@ public class WebSocketSessionManager {
                     if (message instanceof ChatMessage) {
                         sendMessageToLocalRoom(roomId, (ChatMessage) message);
                     } else {
-                        log.warn("지원하지 않는 메시지 타입: {} - Topic: {}", message.getClass().getSimpleName(), topic);
+                        logger.warn("지원하지 않는 메시지 타입: {} - Topic: {}", message.getClass().getSimpleName(), topic);
                     }
                 } else {
-                    log.debug("채팅방 토픽이 아닌 메시지 무시: {}", topic);
+                    logger.debug("채팅방 토픽이 아닌 메시지 무시: {}", topic);
                 }
             }
             
@@ -99,15 +101,15 @@ public class WebSocketSessionManager {
                 // 채팅방 관련 토픽만 처리 (chat:room:으로 시작하는 토픽)
                 boolean canHandle = topic != null && topic.startsWith("chat:room:");
                 if (canHandle) {
-                    log.debug("메시지 처리 가능: {}", topic);
+                    logger.debug("메시지 처리 가능: {}", topic);
                 } else {
-                    log.trace("메시지 처리 불가: {}", topic);
+                    logger.trace("메시지 처리 불가: {}", topic);
                 }
                 return canHandle;
             }
         });
         
-        log.info("WebSocketSessionManager 초기화 완료 - Redis 메시지 핸들러 등록됨");
+        logger.info("WebSocketSessionManager 초기화 완료 - Redis 메시지 핸들러 등록됨");
     }
     
     /**
@@ -117,11 +119,11 @@ public class WebSocketSessionManager {
      */
     // 세션은 서버마다 다른값을 가지고 있고 세션끼리는 세션정보를 공유 x 그래서 메모리 값으로 관리해야 한다.
     public void addSession(String accountEmail, WebSocketSession session) {
-        log.info("사용자 세션 추가 - AccountEmail: {}, SessionId: {}", accountEmail, session.getId());
+        logger.info("사용자 세션 추가 - AccountEmail: {}, SessionId: {}", accountEmail, session.getId());
         
         userSessions.computeIfAbsent(accountEmail, k -> ConcurrentHashMap.newKeySet()).add(session);
         
-        log.info("사용자 {}의 활성 세션 수: {}", accountEmail, userSessions.get(accountEmail).size());
+        logger.info("사용자 {}의 활성 세션 수: {}", accountEmail, userSessions.get(accountEmail).size());
     }
     
     /**
@@ -131,7 +133,7 @@ public class WebSocketSessionManager {
      */
     public void removeSession(String accountEmail, WebSocketSession session) {
         //if 카카오톡 알림같이 ,지속적으로 발생하는 이벤트에 대한 session 추적을 해야한다면 session을 유지해야한다.
-        log.info("사용자 세션 제거 - AccountEmail: {}, SessionId: {}", accountEmail, session.getId());
+        logger.info("사용자 세션 제거 - AccountEmail: {}, SessionId: {}", accountEmail, session.getId());
         
         Set<WebSocketSession> sessions = userSessions.get(accountEmail);
         if (sessions != null) {
@@ -140,9 +142,9 @@ public class WebSocketSessionManager {
             // 세션이 없으면 맵에서도 제거
             if (sessions.isEmpty()) {
                 userSessions.remove(accountEmail);
-                log.info("사용자 {}의 모든 세션이 제거됨", accountEmail);
+                logger.info("사용자 {}의 모든 세션이 제거됨", accountEmail);
             } else {
-                log.info("사용자 {}의 활성 세션 수: {}", accountEmail, sessions.size());
+                logger.info("사용자 {}의 활성 세션 수: {}", accountEmail, sessions.size());
             }
         }
         
@@ -151,50 +153,50 @@ public class WebSocketSessionManager {
                 .mapToInt(Set::size)
                 .sum();
         
-        log.info("전체 연결된 사용자 수: {}", totalConnectedUsers);
+        logger.info("전체 연결된 사용자 수: {}", totalConnectedUsers);
         
         // 연결된 사용자가 0명이면 Redis 구독 해제 및 서버 정보 정리
         if (totalConnectedUsers == 0) {
-            log.info("모든 사용자가 연결 해제됨. Redis 구독 및 서버 정보 정리 시작");
+            logger.info("모든 사용자가 연결 해제됨. Redis 구독 및 서버 정보 정리 시작");
             
             // RedisMessageBroker에서 구독 중인 방 목록 가져오기
             Set<String> subscribedRooms = redisMessageBroker.getSubscribedRooms();
 
             if (!subscribedRooms.isEmpty()) {
-                log.info("구독 중인 방 {}개 발견. 구독 해제 시작", subscribedRooms.size());
+                logger.info("구독 중인 방 {}개 발견. 구독 해제 시작", subscribedRooms.size());
                 
                 // 각 방에서 구독 해제
                 for (String roomId : subscribedRooms) {
                     if (roomId != null) {
-                        log.info("방 {}에서 구독 해제", roomId);
+                        logger.info("방 {}에서 구독 해제", roomId);
                         redisMessageBroker.unsubscribeFromRoom(roomId);
                     }
                 }
                 
-                log.info("모든 방에서 구독 해제 완료");
+                logger.info("모든 방에서 구독 해제 완료");
             } else {
-                log.info("구독 중인 방이 없음");
+                logger.info("구독 중인 방이 없음");
             }
             
             // 서버 방 키 삭제 (Redis에 저장된 서버별 방 정보)
             String serverRoomsKey = serverRoomsKeyPrefix + ":" + redisMessageBroker.getInstanceId();
             Boolean deleted = redisTemplate.delete(serverRoomsKey);
             if (deleted) {
-                log.info("서버 방 키 삭제 완료: {}", serverRoomsKey);
+                logger.info("서버 방 키 삭제 완료: {}", serverRoomsKey);
             } else {
-                log.info("서버 방 키가 이미 삭제됨: {}", serverRoomsKey);
+                logger.info("서버 방 키가 이미 삭제됨: {}", serverRoomsKey);
             }
             
             // 서버 사용자 키도 삭제
             String serverUsersKey = serverUsersKeyPrefix + ":" + redisMessageBroker.getInstanceId();
             Boolean userKeyDeleted = redisTemplate.delete(serverUsersKey);
             if (Boolean.TRUE.equals(userKeyDeleted)) {
-                log.info("서버 사용자 키 삭제 완료: {}", serverUsersKey);
+                logger.info("서버 사용자 키 삭제 완료: {}", serverUsersKey);
             } else {
-                log.info("서버 사용자 키가 이미 삭제됨: {}", serverUsersKey);
+                logger.info("서버 사용자 키가 이미 삭제됨: {}", serverUsersKey);
             }
             
-            log.info("Redis 구독 및 서버 정보 정리 완료");
+            logger.info("Redis 구독 및 서버 정보 정리 완료");
         }
     }
     /**
@@ -219,7 +221,7 @@ public class WebSocketSessionManager {
         // 서버별 방 정보에 방 ID 추가
         redisTemplate.opsForSet().add(serverRoomKey, roomId);
         
-        log.info("사용자 {}가 방 {}에 참여 - 서버: {}, 서버방키: {}", accountEmail, roomId, serverId, serverRoomKey);
+        logger.info("사용자 {}가 방 {}에 참여 - 서버: {}, 서버방키: {}", accountEmail, roomId, serverId, serverRoomKey);
     }
     public void sendMessageToLocalRoom(String roomId, ChatMessage chatMessage) {
         try {
@@ -237,9 +239,9 @@ public class WebSocketSessionManager {
                         if (session.isOpen()) {
                             try {
                                 session.sendMessage(new org.springframework.web.socket.TextMessage(json));
-                                log.info("채팅방 {}에 메시지 전송 완료 - 사용자: {}", roomId, accountEmail);
+                                logger.info("채팅방 {}에 메시지 전송 완료 - 사용자: {}", roomId, accountEmail);
                             } catch (Exception e) {
-                                log.error("메시지 전송 실패 - 사용자: {}, 에러: {}", accountEmail, e.getMessage(), e);
+                                logger.error("메시지 전송 실패 - 사용자: {}, 에러: {}", accountEmail, e.getMessage(), e);
                                 closedSessions.add(session);
                             }
                         } else {
@@ -250,15 +252,15 @@ public class WebSocketSessionManager {
                     // 닫힌 세션들 제거
                     if (!closedSessions.isEmpty()) {
                         sessions.removeAll(closedSessions);
-                        log.info("사용자 {}의 닫힌 세션 {}개 제거", accountEmail, closedSessions.size());
+                        logger.info("사용자 {}의 닫힌 세션 {}개 제거", accountEmail, closedSessions.size());
                     }
                 } else {
-                    log.debug("사용자 {}는 채팅방 {}의 멤버가 아님", accountEmail, roomId);
+                    logger.debug("사용자 {}는 채팅방 {}의 멤버가 아님", accountEmail, roomId);
                 }
             });
             
         } catch (Exception e) {
-            log.error("메시지 직렬화 실패 - 채팅방: {}, 에러: {}", roomId, e.getMessage(), e);
+            logger.error("메시지 직렬화 실패 - 채팅방: {}, 에러: {}", roomId, e.getMessage(), e);
         }
     }
 
@@ -272,7 +274,7 @@ public class WebSocketSessionManager {
         try {
             String json = objectMapper.writeValueAsString(push);
             
-            log.info("로컬 세션에 ChatMessagePush 전송 시작 - roomId: {}, messageId: {}", roomId, push.getMessageId());
+            logger.info("로컬 세션에 ChatMessagePush 전송 시작 - roomId: {}, messageId: {}", roomId, push.getMessageId());
             
             // 채팅방 멤버들에게 메시지 전송
             userSessions.forEach((accountEmail, sessions) -> {
@@ -286,9 +288,9 @@ public class WebSocketSessionManager {
                         if (session.isOpen()) {
                             try {
                                 session.sendMessage(new org.springframework.web.socket.TextMessage(json));
-                                log.debug("채팅방 {}에 ChatMessagePush 전송 완료 - 사용자: {}", roomId, accountEmail);
+                                logger.debug("채팅방 {}에 ChatMessagePush 전송 완료 - 사용자: {}", roomId, accountEmail);
                             } catch (Exception e) {
-                                log.error("ChatMessagePush 전송 실패 - 사용자: {}, 에러: {}", accountEmail, e.getMessage(), e);
+                                logger.error("ChatMessagePush 전송 실패 - 사용자: {}, 에러: {}", accountEmail, e.getMessage(), e);
                                 closedSessions.add(session);
                             }
                         } else {
@@ -299,10 +301,10 @@ public class WebSocketSessionManager {
                     // 닫힌 세션들 제거
                     if (!closedSessions.isEmpty()) {
                         sessions.removeAll(closedSessions);
-                        log.info("사용자 {}의 닫힌 세션 {}개 제거", accountEmail, closedSessions.size());
+                        logger.info("사용자 {}의 닫힌 세션 {}개 제거", accountEmail, closedSessions.size());
                     }
                 } else {
-                    log.debug("사용자 {}는 채팅방 {}의 멤버가 아님", accountEmail, roomId);
+                    logger.debug("사용자 {}는 채팅방 {}의 멤버가 아님", accountEmail, roomId);
                 }
             });
             
@@ -311,15 +313,15 @@ public class WebSocketSessionManager {
             if (roomId != null && !roomId.trim().isEmpty()) {
                 String dest = "/topic/chat/room/" + roomId;
                 messagingTemplate.convertAndSend(dest, push);
-                log.info("SimpMessagingTemplate으로도 전송 완료 - dest: {}, roomId: {}", dest, roomId);
+                logger.info("SimpMessagingTemplate으로도 전송 완료 - dest: {}, roomId: {}", dest, roomId);
             } else {
-                log.warn("roomId가 비어있어서 SimpMessagingTemplate 전송 건너뜀");
+                logger.warn("roomId가 비어있어서 SimpMessagingTemplate 전송 건너뜀");
             }
             
-            log.info("로컬 세션 ChatMessagePush 전송 완료 - roomId: {}", roomId);
+            logger.info("로컬 세션 ChatMessagePush 전송 완료 - roomId: {}", roomId);
             
         } catch (Exception e) {
-            log.error("ChatMessagePush 직렬화 실패 - 채팅방: {}, 에러: {}", roomId, e.getMessage(), e);
+            logger.error("ChatMessagePush 직렬화 실패 - 채팅방: {}, 에러: {}", roomId, e.getMessage(), e);
         }
     }
 
@@ -333,7 +335,7 @@ public class WebSocketSessionManager {
         try {
             String json = objectMapper.writeValueAsString(sidebarUpdate);
             
-            log.info("사용자 {}에게 사이드바 업데이트 전송 시작 - roomId: {}", userEmail, sidebarUpdate.getRoomId());
+            logger.info("사용자 {}에게 사이드바 업데이트 전송 시작 - roomId: {}", userEmail, sidebarUpdate.getRoomId());
             
             // 해당 사용자의 WebSocket 세션들 조회
             java.util.Set<WebSocketSession> sessions = userSessions.get(userEmail);
@@ -344,9 +346,9 @@ public class WebSocketSessionManager {
                     if (session.isOpen()) {
                         try {
                             session.sendMessage(new org.springframework.web.socket.TextMessage(json));
-                            log.debug("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
+                            logger.debug("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
                         } catch (Exception e) {
-                            log.error("사이드바 업데이트 전송 실패 - 사용자: {}, 에러: {}", userEmail, e.getMessage(), e);
+                            logger.error("사이드바 업데이트 전송 실패 - 사용자: {}, 에러: {}", userEmail, e.getMessage(), e);
                             closedSessions.add(session);
                         }
                     } else {
@@ -357,10 +359,10 @@ public class WebSocketSessionManager {
                 // 닫힌 세션들 제거
                 if (!closedSessions.isEmpty()) {
                     sessions.removeAll(closedSessions);
-                    log.info("사용자 {}의 닫힌 세션 {}개 제거", userEmail, closedSessions.size());
+                    logger.info("사용자 {}의 닫힌 세션 {}개 제거", userEmail, closedSessions.size());
                 }
             } else {
-                log.debug("사용자 {}의 활성 세션이 없음", userEmail);
+                logger.debug("사용자 {}의 활성 세션이 없음", userEmail);
             }
             
             // 기존 방식과의 호환성을 위해 SimpMessagingTemplate도 사용
@@ -370,15 +372,15 @@ public class WebSocketSessionManager {
             // roomId가 유효한 경우에만 메시지 전송
             if (sidebarUpdate.getRoomId() != null && !sidebarUpdate.getRoomId().trim().isEmpty()) {
                 messagingTemplate.convertAndSendToUser(userEmail, dest, sidebarUpdate);
-                log.info("SimpMessagingTemplate으로도 사이드바 업데이트 전송 완료 - user: {}, dest: {}, roomId: {}", userEmail, dest, sidebarUpdate.getRoomId());
+                logger.info("SimpMessagingTemplate으로도 사이드바 업데이트 전송 완료 - user: {}, dest: {}, roomId: {}", userEmail, dest, sidebarUpdate.getRoomId());
             } else {
-                log.warn("roomId가 비어있어서 사이드바 업데이트 전송 건너뜀 - user: {}", userEmail);
+                logger.warn("roomId가 비어있어서 사이드바 업데이트 전송 건너뜀 - user: {}", userEmail);
             }
             
-            log.info("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
+            logger.info("사용자 {}에게 사이드바 업데이트 전송 완료", userEmail);
             
         } catch (Exception e) {
-            log.error("사이드바 업데이트 직렬화 실패 - 사용자: {}, 에러: {}", userEmail, e.getMessage(), e);
+            logger.error("사이드바 업데이트 직렬화 실패 - 사용자: {}, 에러: {}", userEmail, e.getMessage(), e);
         }
     }
 
@@ -429,7 +431,7 @@ public class WebSocketSessionManager {
             // 모든 세션이 닫혔으면 사용자를 메모리에서 완전 제거
             if (sessions.isEmpty()) {
                 userSessions.remove(accountEmail);
-                log.debug("사용자 {}의 모든 세션이 닫혀 메모리에서 제거됨", accountEmail);
+                logger.debug("사용자 {}의 모든 세션이 닫혀 메모리에서 제거됨", accountEmail);
             }
         }
         

@@ -2,15 +2,17 @@ package com.talktrip.talktrip.domain.chat.service;
 
 import com.talktrip.talktrip.domain.chat.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 //redis의 메시지 순서 보장을 위한 서비스 (원자적인 연산)
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatMessageSequenceService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ChatMessageSequenceService.class);
     private final RedisTemplate<String,Object> redisTemplate;
     private final ChatMessageRepository chatMessageRepository;
     private final String prefix = "chat:sequence";
@@ -29,20 +31,20 @@ public class ChatMessageSequenceService {
                 
                 // 3) Redis에 DB 값 + 1을 설정
                 redisTemplate.opsForValue().set(key, nextSequence);
-                log.debug("채팅방 {} DB 기반 시퀀스 초기화: {} -> {}", roomId, dbMaxSequence, nextSequence);
+                logger.debug("채팅방 {} DB 기반 시퀀스 초기화: {} -> {}", roomId, dbMaxSequence, nextSequence);
                 return nextSequence;
             } else {
                 // 4) Redis에 값이 있으면 원자적 증가 연산 사용
                 Long sequence = redisTemplate.opsForValue().increment(key);
-                log.debug("채팅방 {} Redis 기반 시퀀스 증가: {} -> {}", roomId, redisSequence, sequence);
+                logger.debug("채팅방 {} Redis 기반 시퀀스 증가: {} -> {}", roomId, redisSequence, sequence);
                 return sequence;
             }
         } catch (Exception e) {
-            log.error("채팅방 {} 시퀀스 생성 중 오류 발생: {}", roomId, e.getMessage(), e);
+            logger.error("채팅방 {} 시퀀스 생성 중 오류 발생: {}", roomId, e.getMessage(), e);
             // 5) Redis 오류 시 DB 기반으로 폴백
             Long dbMaxSequence = chatMessageRepository.findMaxSequenceNumberByRoomId(roomId);
             Long nextSequence = dbMaxSequence + 1;
-            log.debug("채팅방 {} DB 폴백 시퀀스: {} -> {}", roomId, dbMaxSequence, nextSequence);
+            logger.debug("채팅방 {} DB 폴백 시퀀스: {} -> {}", roomId, dbMaxSequence, nextSequence);
             return nextSequence;
         }
     }
@@ -56,10 +58,10 @@ public class ChatMessageSequenceService {
     public Long getNextSequence(String roomId) {
         try {
             Long sequence = getNextSequenceInternal(roomId);
-            log.debug("채팅방 {} 시퀀스 생성: {}", roomId, sequence);
+            logger.debug("채팅방 {} 시퀀스 생성: {}", roomId, sequence);
             return sequence;
         } catch (Exception e) {
-            log.error("채팅방 {} 시퀀스 생성 실패: {}", roomId, e.getMessage(), e);
+            logger.error("채팅방 {} 시퀀스 생성 실패: {}", roomId, e.getMessage(), e);
             throw new RuntimeException("메시지 순서 생성에 실패했습니다: " + e.getMessage());
         }
     }

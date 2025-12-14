@@ -4,17 +4,19 @@ import com.talktrip.talktrip.domain.chat.dto.request.ChatMessageRequestDto;
 import com.talktrip.talktrip.domain.chat.service.ChatService;
 import com.talktrip.talktrip.global.webSocket.WebSocketErrorHandler;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.security.Principal;
 
-@Slf4j
 @RequiredArgsConstructor
 @Controller
 public class ChatWebSocketController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ChatWebSocketController.class);
 
     private final ChatService chatService;
     private final SimpMessagingTemplate messagingTemplate;

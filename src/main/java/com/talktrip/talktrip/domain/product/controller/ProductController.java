@@ -7,7 +7,6 @@ import com.talktrip.talktrip.global.security.CustomMemberDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -18,13 +17,16 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 import static com.talktrip.talktrip.global.util.SortUtil.buildSort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@Slf4j
 @Tag(name = "Product", description = "상품 관련 API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/products")
 public class ProductController {
+
+    private static final Logger logger = LoggerFactory.getLogger(ProductController.class);
 
     private final ProductService productService;
 

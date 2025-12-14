@@ -5,7 +5,8 @@ import com.talktrip.talktrip.domain.chat.dto.response.ChatMessagePush;
 import com.talktrip.talktrip.domain.chat.message.dto.ChatRoomUpdateMessage;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -78,10 +79,11 @@ import java.util.stream.Collectors;
  * // 트랜잭션 커밋 후 재시도 발행
  * redisMessageBroker.publishAfterCommitWithRetry("chat:room:123", chatMessageDto);
  */
-@Slf4j
 @Service
 @Qualifier("redisSubscriber")
 public class RedisMessageBroker implements MessageListener {
+
+    private static final Logger logger = LoggerFactory.getLogger(RedisMessageBroker.class);
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
@@ -151,7 +153,7 @@ public class RedisMessageBroker implements MessageListener {
             this.serverId = "server-" + System.currentTimeMillis();
         }
         
-        log.info("[RedisMessageBroker] 서버 ID 초기화: {}", this.serverId);
+        logger.info("[RedisMessageBroker] 서버 ID 초기화: {}", this.serverId);
     }
 
     // 동시성 처리를 위한 필드들
@@ -211,7 +213,7 @@ public class RedisMessageBroker implements MessageListener {
      */
     @PostConstruct
     public void init() {
-        log.info("[RedisMessageBroker] 초기화 시작 - instanceId={}", instanceId);
+        logger.info("[RedisMessageBroker] 초기화 시작 - instanceId={}", instanceId);
         
         // ApplicationContext를 통해 RedisMessageListenerContainer 가져오기
         RedisMessageListenerContainer container = applicationContext.getBean(RedisMessageListenerContainer.class);
@@ -219,15 +221,15 @@ public class RedisMessageBroker implements MessageListener {
         // 패턴 기반 메시지 리스너 추가
         // chat:room:* 패턴: 채팅방 관련 모든 메시지 수신
         container.addMessageListener(this, new PatternTopic("chat:room:*"));
-        log.info("[RedisMessageBroker] chat:room:* 패턴 구독 추가");
+        logger.info("[RedisMessageBroker] chat:room:* 패턴 구독 추가");
         
         // chat:user:* 패턴: 사용자 관련 모든 메시지 수신
         container.addMessageListener(this, new PatternTopic("chat:user:*"));
-        log.info("[RedisMessageBroker] chat:user:* 패턴 구독 추가");
+        logger.info("[RedisMessageBroker] chat:user:* 패턴 구독 추가");
         
         // Redis 구독 관리자 초기화
         subscriptionManager = new RedisPubSubConfig.RedisSubscriptionManager(container, this);
-        log.info("[RedisMessageBroker] Redis 구독 관리자 초기화 완료");
+        logger.info("[RedisMessageBroker] Redis 구독 관리자 초기화 완료");
         
         // 스케줄러 생성 (데몬 스레드로 설정)
         scheduler = Executors.newScheduledThreadPool(2, r -> {
@@ -260,7 +262,7 @@ public class RedisMessageBroker implements MessageListener {
             TimeUnit.MINUTES
         );
         
-        log.info("[RedisMessageBroker] 초기화 완료 - 정리 작업({}분), 통계 로그({}분), 구독 체크(5분) 주기로 실행", 
+        logger.info("[RedisMessageBroker] 초기화 완료 - 정리 작업({}분), 통계 로그({}분), 구독 체크(5분) 주기로 실행", 
                 CLEANUP_INTERVAL_MINUTES, STATS_LOG_INTERVAL_MINUTES);
     }
 
@@ -269,7 +271,7 @@ public class RedisMessageBroker implements MessageListener {
      */
     @PreDestroy
     public void destroy() {
-        log.info("[RedisMessageBroker] 종료 시작");
+        logger.info("[RedisMessageBroker] 종료 시작");
         
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.shutdown();
@@ -286,7 +288,7 @@ public class RedisMessageBroker implements MessageListener {
         // 마지막 정리 작업 실행
         cleanupExpiredMessages();
         
-        log.info("[RedisMessageBroker] 종료 완료");
+        logger.info("[RedisMessageBroker] 종료 완료");
     }
 
     /**
@@ -295,27 +297,27 @@ public class RedisMessageBroker implements MessageListener {
      */
     @PreDestroy
     public void cleanup() {
-        log.info("[RedisMessageBroker] cleanup() 메서드 실행 시작");
+        logger.info("[RedisMessageBroker] cleanup() 메서드 실행 시작");
         
         try {
             // 1. 스케줄러 종료
             if (scheduler != null && !scheduler.isShutdown()) {
-                log.info("[RedisMessageBroker] 스케줄러 종료 중...");
+                logger.info("[RedisMessageBroker] 스케줄러 종료 중...");
                 scheduler.shutdown();
                 try {
                     if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                        log.warn("[RedisMessageBroker] 스케줄러 강제 종료");
+                        logger.warn("[RedisMessageBroker] 스케줄러 강제 종료");
                         scheduler.shutdownNow();
                     }
                 } catch (InterruptedException e) {
-                    log.warn("[RedisMessageBroker] 스케줄러 종료 중 인터럽트 발생");
+                    logger.warn("[RedisMessageBroker] 스케줄러 종료 중 인터럽트 발생");
                     scheduler.shutdownNow();
                     Thread.currentThread().interrupt();
                 }
             }
             
             // 2. 모든 구독 취소
-            log.info("[RedisMessageBroker] 구독 취소 중...");
+            logger.info("[RedisMessageBroker] 구독 취소 중...");
             int roomCount = subscribedRooms.size();
             int userCount = subscribedUsers.size();
             
@@ -330,9 +332,9 @@ public class RedisMessageBroker implements MessageListener {
                     if (subscriptionManager != null) {
                         subscriptionManager.unsubscribeFromRoomChannel(roomId);
                     }
-                    log.debug("[RedisMessageBroker] 채팅방 구독 취소: {}", roomId);
+                    logger.debug("[RedisMessageBroker] 채팅방 구독 취소: {}", roomId);
                 } catch (Exception e) {
-                    log.warn("[RedisMessageBroker] 채팅방 구독 취소 실패: {}, 오류: {}", roomId, e.getMessage());
+                    logger.warn("[RedisMessageBroker] 채팅방 구독 취소 실패: {}, 오류: {}", roomId, e.getMessage());
                 }
             }
             
@@ -340,14 +342,14 @@ public class RedisMessageBroker implements MessageListener {
             for (String userId : subscribedUsers) {
                 try {
                     subscriptionManager.unsubscribeFromUserChannel(userId);
-                    log.debug("[RedisMessageBroker] 사용자 구독 취소: {}", userId);
+                    logger.debug("[RedisMessageBroker] 사용자 구독 취소: {}", userId);
                 } catch (Exception e) {
-                    log.warn("[RedisMessageBroker] 사용자 구독 취소 실패: {}, 오류: {}", userId, e.getMessage());
+                    logger.warn("[RedisMessageBroker] 사용자 구독 취소 실패: {}, 오류: {}", userId, e.getMessage());
                 }
             }
             
             // 3. 모든 메시지 정보 정리
-            log.info("[RedisMessageBroker] 메시지 정보 정리 중...");
+            logger.info("[RedisMessageBroker] 메시지 정보 정리 중...");
             int removedMessages = processedMessages.size();
             processedMessages.clear();
             
@@ -355,26 +357,26 @@ public class RedisMessageBroker implements MessageListener {
             if (messageHashToId != null) {
                 messageHashToId.clear();
             } else {
-                log.warn("[RedisMessageBroker] messageHashToId가 null이므로 해시 맵 정리를 건너뜁니다.");
+                logger.warn("[RedisMessageBroker] messageHashToId가 null이므로 해시 맵 정리를 건너뜁니다.");
             }
             
             topicContentMap.clear();
             
             // 4. 구독 정보 정리
-            log.info("[RedisMessageBroker] 구독 정보 정리 중...");
+            logger.info("[RedisMessageBroker] 구독 정보 정리 중...");
             subscribedRooms.clear();
             subscribedUsers.clear();
             
             // 5. 카운터 리셋
             messageIdCounter.set(0);
             
-            log.info("[RedisMessageBroker] cleanup() 완료 - 구독취소(방: {}개, 사용자: {}개), 제거된 메시지: {}개", 
+            logger.info("[RedisMessageBroker] cleanup() 완료 - 구독취소(방: {}개, 사용자: {}개), 제거된 메시지: {}개", 
                     roomCount, userCount, removedMessages);
             
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] cleanup() 실행 중 오류 발생", e);
+            logger.error("[RedisMessageBroker] cleanup() 실행 중 오류 발생", e);
         } finally {
-            log.info("[RedisMessageBroker] cleanup() 메서드 실행 완료");
+            logger.info("[RedisMessageBroker] cleanup() 메서드 실행 완료");
         }
     }
 
@@ -386,10 +388,10 @@ public class RedisMessageBroker implements MessageListener {
             MessageStats messageStats = getMessageStats();
             SubscriptionStats subscriptionStats = getSubscriptionStats();
             
-            log.info("[RedisMessageBroker] 주기적 통계 - 메시지: {}, 구독: {}", 
+            logger.info("[RedisMessageBroker] 주기적 통계 - 메시지: {}, 구독: {}", 
                     messageStats, subscriptionStats);
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 통계 로그 출력 중 오류 발생", e);
+            logger.error("[RedisMessageBroker] 통계 로그 출력 중 오류 발생", e);
         }
     }
 
@@ -403,20 +405,20 @@ public class RedisMessageBroker implements MessageListener {
             
             // 구독 상태가 비정상적으로 많은 경우 경고
             if (roomCount > 1000) {
-                log.warn("[RedisMessageBroker] 구독 중인 채팅방이 많음: {}개", roomCount);
+                logger.warn("[RedisMessageBroker] 구독 중인 채팅방이 많음: {}개", roomCount);
             }
             
             if (userCount > 10000) {
-                log.warn("[RedisMessageBroker] 구독 중인 사용자가 많음: {}명", userCount);
+                logger.warn("[RedisMessageBroker] 구독 중인 사용자가 많음: {}명", userCount);
             }
             
             // 구독 상태가 비어있는 경우 정보 로그
             if (roomCount == 0 && userCount == 0) {
-                log.debug("[RedisMessageBroker] 현재 구독 중인 방/사용자 없음");
+                logger.debug("[RedisMessageBroker] 현재 구독 중인 방/사용자 없음");
             }
             
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 구독 상태 체크 중 오류 발생", e);
+            logger.error("[RedisMessageBroker] 구독 상태 체크 중 오류 발생", e);
         }
     }
 
@@ -433,9 +435,9 @@ public class RedisMessageBroker implements MessageListener {
         try {
             String message = objectMapper.writeValueAsString(payload);
             redisTemplate.convertAndSend(channel, message);
-            log.info("[RedisMessageBroker] 단순 메시지 발행 완료: channel={}, instanceId={}", channel, instanceId);
+            logger.info("[RedisMessageBroker] 단순 메시지 발행 완료: channel={}, instanceId={}", channel, instanceId);
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 단순 메시지 발행 실패: channel={}, error={}", channel, e.getMessage(), e);
+            logger.error("[RedisMessageBroker] 단순 메시지 발행 실패: channel={}, error={}", channel, e.getMessage(), e);
             throw new RuntimeException("단순 메시지 발행 실패", e);
         }
     }
@@ -454,9 +456,9 @@ public class RedisMessageBroker implements MessageListener {
             String messageWithSender = addSenderInfo(message);
             
             redisTemplate.convertAndSend(channel, messageWithSender);
-            log.info("[RedisMessageBroker] 다른 인스턴스에 메시지 발행 완료: channel={}, sender={}", channel, instanceId);
+            logger.info("[RedisMessageBroker] 다른 인스턴스에 메시지 발행 완료: channel={}, sender={}", channel, instanceId);
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 다른 인스턴스 메시지 발행 실패: channel={}, error={}", channel, e.getMessage(), e);
+            logger.error("[RedisMessageBroker] 다른 인스턴스 메시지 발행 실패: channel={}, error={}", channel, e.getMessage(), e);
             throw new RuntimeException("다른 인스턴스 메시지 발행 실패", e);
         }
     }
@@ -473,7 +475,7 @@ public class RedisMessageBroker implements MessageListener {
             String senderInfo = String.format("{\"senderInstanceId\":\"%s\",\"originalMessage\":%s}", instanceId, message);
             return senderInfo;
         } catch (Exception e) {
-            log.warn("[RedisMessageBroker] 발행자 정보 추가 실패, 원본 메시지 사용: {}", e.getMessage());
+            logger.warn("[RedisMessageBroker] 발행자 정보 추가 실패, 원본 메시지 사용: {}", e.getMessage());
             return message;
         }
     }
@@ -489,9 +491,9 @@ public class RedisMessageBroker implements MessageListener {
             String channel = "chat:room:" + roomId;
             String message = objectMapper.writeValueAsString(dto);
             redisTemplate.convertAndSend(channel, message);
-            log.info("[RedisMessageBroker] 채팅방 메시지 발행 완료: roomId={}, channel={}", roomId, channel);
+            logger.info("[RedisMessageBroker] 채팅방 메시지 발행 완료: roomId={}, channel={}", roomId, channel);
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 채팅방 메시지 발행 실패: roomId={}, error={}", roomId, e.getMessage(), e);
+            logger.error("[RedisMessageBroker] 채팅방 메시지 발행 실패: roomId={}, error={}", roomId, e.getMessage(), e);
             throw new RuntimeException("채팅방 메시지 발행 실패", e);
         }
     }
@@ -507,9 +509,9 @@ public class RedisMessageBroker implements MessageListener {
             String channel = "chat:user:" + userId;
             String message = objectMapper.writeValueAsString(dto);
             redisTemplate.convertAndSend(channel, message);
-            log.info("[RedisMessageBroker] 사용자 메시지 발행 완료: userId={}, channel={}", userId, channel);
+            logger.info("[RedisMessageBroker] 사용자 메시지 발행 완료: userId={}, channel={}", userId, channel);
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 사용자 메시지 발행 실패: userId={}, error={}", userId, e.getMessage(), e);
+            logger.error("[RedisMessageBroker] 사용자 메시지 발행 실패: userId={}, error={}", userId, e.getMessage(), e);
             throw new RuntimeException("사용자 메시지 발행 실패", e);
         }
     }
@@ -584,18 +586,18 @@ public class RedisMessageBroker implements MessageListener {
             try {
                  String jsonMessage = objectMapper.writeValueAsString(message);
                  redisTemplate.convertAndSend(channel, jsonMessage);
-                 log.debug("[RedisMessageBroker] 재시도 메시지 발행 성공 - 시도 횟수: {}", attempts + 1);
+                 logger.debug("[RedisMessageBroker] 재시도 메시지 발행 성공 - 시도 횟수: {}", attempts + 1);
                 return;
             } catch (Exception e) {
                 attempts++;
 
                 if (attempts >= maxAttempts) {
-                    log.error("[RedisMessageBroker] 최대 재시도 횟수 초과. 메시지 발행 실패: channel={}, message={}", 
+                    logger.error("[RedisMessageBroker] 최대 재시도 횟수 초과. 메시지 발행 실패: channel={}, message={}", 
                             channel, message, e);
                     throw new RuntimeException("Redis 메시지 발행 실패", e);
                 }
 
-                log.warn("[RedisMessageBroker] 메시지 발행 실패, {}ms 후 재시도 ({}/{}): channel={}", 
+                logger.warn("[RedisMessageBroker] 메시지 발행 실패, {}ms 후 재시도 ({}/{}): channel={}", 
                         backoff, attempts, maxAttempts, channel);
 
                 try {
@@ -646,7 +648,7 @@ public class RedisMessageBroker implements MessageListener {
                 String channel = "chat:room:" + roomId;
                 publishWithRetry(channel, dto);
             } catch (Exception e) {
-                log.error("[RedisMessageBroker] 채팅방 재시도 메시지 발행 실패: roomId={}", roomId, e);
+                logger.error("[RedisMessageBroker] 채팅방 재시도 메시지 발행 실패: roomId={}", roomId, e);
             }
         });
     }
@@ -663,7 +665,7 @@ public class RedisMessageBroker implements MessageListener {
                 String channel = "chat:user:" + userId;
                 publishWithRetry(channel, dto);
             } catch (Exception e) {
-                log.error("[RedisMessageBroker] 사용자 재시도 메시지 발행 실패: userId={}", userId, e);
+                logger.error("[RedisMessageBroker] 사용자 재시도 메시지 발행 실패: userId={}", userId, e);
             }
         });
     }
@@ -684,9 +686,9 @@ public class RedisMessageBroker implements MessageListener {
 // 이는 비즈니스 로직 레벨의 구독 관리와 Redis Pub/Sub 레벨의 구독을 분리하여 관리하는 설계입니다!
         boolean added = subscribedRooms.add(roomId);// Set이므로 중복 방지
         if (added) {
-            log.info("[RedisMessageBroker] 채팅방 구독 추가: roomId={}", roomId);
+            logger.info("[RedisMessageBroker] 채팅방 구독 추가: roomId={}", roomId);
         } else {
-            log.debug("[RedisMessageBroker] 이미 구독 중인 채팅방: roomId={}", roomId);
+            logger.debug("[RedisMessageBroker] 이미 구독 중인 채팅방: roomId={}", roomId);
         }
         return added;
     }
@@ -705,9 +707,9 @@ public class RedisMessageBroker implements MessageListener {
 // 이는 Redis Pub/Sub 레벨과 애플리케이션 비즈니스 로직 레벨을 분리하여 관리하는 깔끔한 설계입니다! 🎯
         boolean removed = subscribedRooms.remove(roomId);
         if (removed) {
-            log.info("[RedisMessageBroker] 채팅방 구독 해제: roomId={}", roomId);
+            logger.info("[RedisMessageBroker] 채팅방 구독 해제: roomId={}", roomId);
         } else {
-            log.debug("[RedisMessageBroker] 구독하지 않은 채팅방: roomId={}", roomId);
+            logger.debug("[RedisMessageBroker] 구독하지 않은 채팅방: roomId={}", roomId);
         }
         return removed;
     }
@@ -721,9 +723,9 @@ public class RedisMessageBroker implements MessageListener {
     public boolean subscribeUser(String userId) {
         boolean added = subscribedUsers.add(userId);
         if (added) {
-            log.info("[RedisMessageBroker] 사용자 구독 추가: userId={}", userId);
+            logger.info("[RedisMessageBroker] 사용자 구독 추가: userId={}", userId);
         } else {
-            log.debug("[RedisMessageBroker] 이미 구독 중인 사용자: userId={}", userId);
+            logger.debug("[RedisMessageBroker] 이미 구독 중인 사용자: userId={}", userId);
         }
         return added;
     }
@@ -737,9 +739,9 @@ public class RedisMessageBroker implements MessageListener {
     public boolean unsubscribeUser(String userId) {
         boolean removed = subscribedUsers.remove(userId);
         if (removed) {
-            log.info("[RedisMessageBroker] 사용자 구독 해제: userId={}", userId);
+            logger.info("[RedisMessageBroker] 사용자 구독 해제: userId={}", userId);
         } else {
-            log.debug("[RedisMessageBroker] 구독하지 않은 사용자: userId={}", userId);
+            logger.debug("[RedisMessageBroker] 구독하지 않은 사용자: userId={}", userId);
         }
         return removed;
     }
@@ -836,7 +838,7 @@ public class RedisMessageBroker implements MessageListener {
     private boolean isDuplicateMessage(String topic, String content, String messageHash) {
         // messageHashToId가 null인 경우 중복 체크 불가
         if (messageHashToId == null) {
-            log.warn("[RedisMessageBroker] messageHashToId가 null이므로 중복 체크를 건너뜁니다.");
+            logger.warn("[RedisMessageBroker] messageHashToId가 null이므로 중복 체크를 건너뜁니다.");
             return false;
         }
         
@@ -862,7 +864,7 @@ public class RedisMessageBroker implements MessageListener {
         if (lastProcessed != null) {
             Duration timeDiff = Duration.between(lastProcessed, LocalDateTime.now());
             if (timeDiff.getSeconds() < DUPLICATE_CHECK_WINDOW_SECONDS) {
-                log.debug("[RedisMessageBroker] 시간 윈도우 내 중복 메시지: topic={}, timeDiff={}s", 
+                logger.debug("[RedisMessageBroker] 시간 윈도우 내 중복 메시지: topic={}, timeDiff={}s", 
                         topic, timeDiff.getSeconds());
                 return true;
             }
@@ -886,7 +888,7 @@ public class RedisMessageBroker implements MessageListener {
             byte[] hashBytes = digest.digest(dataToHash.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(hashBytes);
         } catch (NoSuchAlgorithmException e) {
-            log.error("[RedisMessageBroker] 해시 생성 실패", e);
+            logger.error("[RedisMessageBroker] 해시 생성 실패", e);
             // SHA-256이 없는 경우 대체 방법 사용
             return String.valueOf((topic + ":" + content).hashCode());
         }
@@ -934,7 +936,7 @@ public class RedisMessageBroker implements MessageListener {
         try {
             // messageHashToId가 null인 경우 처리 불가
             if (messageHashToId == null) {
-                log.warn("[RedisMessageBroker] messageHashToId가 null이므로 정리 작업을 건너뜁니다.");
+                logger.warn("[RedisMessageBroker] messageHashToId가 null이므로 정리 작업을 건너뜁니다.");
                 return;
             }
             
@@ -943,7 +945,7 @@ public class RedisMessageBroker implements MessageListener {
             removedMessages = processedMessages.entrySet().removeIf(entry -> {
                 boolean expired = entry.getValue().isExpired();
                 if (expired) {
-                    log.debug("[RedisMessageBroker] 만료된 메시지 제거: {}", entry.getValue());
+                    logger.debug("[RedisMessageBroker] 만료된 메시지 제거: {}", entry.getValue());
                     // 해시 맵에서도 제거
                     if (messageHashToId != null) {
                         messageHashToId.remove(entry.getValue().contentHash);
@@ -957,17 +959,17 @@ public class RedisMessageBroker implements MessageListener {
             removedKeys = topicContentMap.entrySet().removeIf(entry -> {
                 boolean expired = Duration.between(entry.getValue(), LocalDateTime.now()).getSeconds() > DUPLICATE_CHECK_WINDOW_SECONDS;
                 if (expired) {
-                    log.debug("[RedisMessageBroker] 만료된 토픽+내용 키 제거: {}", entry.getKey());
+                    logger.debug("[RedisMessageBroker] 만료된 토픽+내용 키 제거: {}", entry.getKey());
                 }
                 return expired;
             }) ? 1 : 0;
             
             if (removedMessages > 0 || removedKeys > 0) {
-                log.info("[RedisMessageBroker] 정리 작업 완료 - 메시지: {}개, 키: {}개", removedMessages, removedKeys);
+                logger.info("[RedisMessageBroker] 정리 작업 완료 - 메시지: {}개, 키: {}개", removedMessages, removedKeys);
             }
             
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 정리 작업 중 오류 발생", e);
+            logger.error("[RedisMessageBroker] 정리 작업 중 오류 발생", e);
         }
     }
 
@@ -980,7 +982,7 @@ public class RedisMessageBroker implements MessageListener {
         try {
             // messageHashToId가 null인 경우 처리 불가
             if (messageHashToId == null) {
-                log.warn("[RedisMessageBroker] messageHashToId가 null이므로 1분 이상 된 메시지 정리를 건너뜁니다.");
+                logger.warn("[RedisMessageBroker] messageHashToId가 null이므로 1분 이상 된 메시지 정리를 건너뜁니다.");
                 return 0;
             }
             
@@ -991,7 +993,7 @@ public class RedisMessageBroker implements MessageListener {
             removedCount = processedMessages.entrySet().removeIf(entry -> {
                 boolean oldMessage = entry.getValue().processedAt.isBefore(oneMinuteAgo);
                 if (oldMessage) {
-                    log.debug("[RedisMessageBroker] 1분 이상 된 메시지 제거: {}", entry.getValue());
+                    logger.debug("[RedisMessageBroker] 1분 이상 된 메시지 제거: {}", entry.getValue());
                     // 해시 맵에서도 제거
                     if (messageHashToId != null) {
                         messageHashToId.remove(entry.getValue().contentHash);
@@ -1005,19 +1007,19 @@ public class RedisMessageBroker implements MessageListener {
             removedKeys = topicContentMap.entrySet().removeIf(entry -> {
                 boolean oldKey = entry.getValue().isBefore(oneMinuteAgo);
                 if (oldKey) {
-                    log.debug("[RedisMessageBroker] 1분 이상 된 토픽+내용 키 제거: {}", entry.getKey());
+                    logger.debug("[RedisMessageBroker] 1분 이상 된 토픽+내용 키 제거: {}", entry.getKey());
                 }
                 return oldKey;
             }) ? topicContentMap.size() : 0;
             
             if (removedCount > 0 || removedKeys > 0) {
-                log.info("[RedisMessageBroker] 1분 이상 된 메시지 정리 완료 - 메시지: {}개, 키: {}개", removedCount, removedKeys);
+                logger.info("[RedisMessageBroker] 1분 이상 된 메시지 정리 완료 - 메시지: {}개, 키: {}개", removedCount, removedKeys);
             }
             
             return removedCount;
             
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] 1분 이상 된 메시지 정리 중 오류 발생", e);
+            logger.error("[RedisMessageBroker] 1분 이상 된 메시지 정리 중 오류 발생", e);
             return 0;
         }
     }
@@ -1043,11 +1045,11 @@ public class RedisMessageBroker implements MessageListener {
             expiredKeys.forEach(processedMessages::remove);
             
             if (!expiredKeys.isEmpty()) {
-                log.info("[RedisMessageBroker] Redis에서 {}개의 메시지 제거됨", expiredKeys.size());
+                logger.info("[RedisMessageBroker] Redis에서 {}개의 메시지 제거됨", expiredKeys.size());
             }
             
         } catch (Exception e) {
-            log.error("[RedisMessageBroker] cleanUpProcessedMessages 실행 중 오류 발생", e);
+            logger.error("[RedisMessageBroker] cleanUpProcessedMessages 실행 중 오류 발생", e);
         }
     }
 
@@ -1130,7 +1132,7 @@ public class RedisMessageBroker implements MessageListener {
     public MessageInfo getMessageInfoByHash(String messageHash) {
         // messageHashToId가 null인 경우 처리 불가
         if (messageHashToId == null) {
-            log.warn("[RedisMessageBroker] messageHashToId가 null이므로 해시로 메시지 정보 조회를 건너뜁니다.");
+            logger.warn("[RedisMessageBroker] messageHashToId가 null이므로 해시로 메시지 정보 조회를 건너뜁니다.");
             return null;
         }
         
@@ -1159,7 +1161,7 @@ public class RedisMessageBroker implements MessageListener {
     public ConcurrentMap<String, String> getMessageHashMap() {
         // messageHashToId가 null인 경우 빈 맵 반환
         if (messageHashToId == null) {
-            log.warn("[RedisMessageBroker] messageHashToId가 null이므로 빈 맵을 반환합니다.");
+            logger.warn("[RedisMessageBroker] messageHashToId가 null이므로 빈 맵을 반환합니다.");
             return new ConcurrentHashMap<>();
         }
         
@@ -1173,10 +1175,10 @@ public class RedisMessageBroker implements MessageListener {
      */
     public void setLocalMessageHandler(LocalMessageHandler handler) {
         if (handler != null) {
-            log.info("[RedisMessageBroker] 로컬 메시지 핸들러 설정: {}", handler.getClass().getSimpleName());
+            logger.info("[RedisMessageBroker] 로컬 메시지 핸들러 설정: {}", handler.getClass().getSimpleName());
             this.localMessageHandler = handler;
         } else {
-            log.warn("[RedisMessageBroker] 로컬 메시지 핸들러가 null입니다");
+            logger.warn("[RedisMessageBroker] 로컬 메시지 핸들러가 null입니다");
             this.localMessageHandler = null;
         }
     }
@@ -1194,13 +1196,13 @@ public class RedisMessageBroker implements MessageListener {
             String channel = new String(message.getChannel(), StandardCharsets.UTF_8);
             String payload = new String(message.getBody(), StandardCharsets.UTF_8);
             
-            log.info("[{}][RedisMessageBroker] 메시지 수신: channel={}, pattern={}, payloadLength={}", 
+            logger.info("[{}][RedisMessageBroker] 메시지 수신: channel={}, pattern={}, payloadLength={}", 
                     instanceId, channel, pattern != null ? new String(pattern) : "null", payload.length());
             
             // 이중 직렬화된 문자열 처리 (기존 RedisSubscriber 로직)
             if (payload.startsWith("\"") && payload.endsWith("\"")) {
                 payload = objectMapper.readValue(payload, String.class);
-                log.debug("[{}][RedisMessageBroker] 이중 직렬화 해제 완료: payloadLength={}", instanceId, payload.length());
+                logger.debug("[{}][RedisMessageBroker] 이중 직렬화 해제 완료: payloadLength={}", instanceId, payload.length());
             }
             
             // 발행자 정보가 포함된 메시지인지 확인하고 자신이 발행한 메시지는 무시
@@ -1209,14 +1211,14 @@ public class RedisMessageBroker implements MessageListener {
                     // 발행자 정보 추출
                     String senderInstanceId = extractSenderInstanceId(payload);
                     if (instanceId.equals(senderInstanceId)) {
-                        log.debug("[{}][RedisMessageBroker] 자신이 발행한 메시지 무시: channel={}", instanceId, channel);
+                        logger.debug("[{}][RedisMessageBroker] 자신이 발행한 메시지 무시: channel={}", instanceId, channel);
                         return; // 자신이 발행한 메시지는 처리하지 않음
                     }
                     // 원본 메시지 추출
                     payload = extractOriginalMessage(payload);
-                    log.debug("[{}][RedisMessageBroker] 다른 인스턴스 메시지 처리: sender={}, channel={}", instanceId, senderInstanceId, channel);
+                    logger.debug("[{}][RedisMessageBroker] 다른 인스턴스 메시지 처리: sender={}, channel={}", instanceId, senderInstanceId, channel);
                 } catch (Exception e) {
-                    log.warn("[{}][RedisMessageBroker] 발행자 정보 파싱 실패, 메시지 처리 계속: {}", instanceId, e.getMessage());
+                    logger.warn("[{}][RedisMessageBroker] 발행자 정보 파싱 실패, 메시지 처리 계속: {}", instanceId, e.getMessage());
                 }
             }
             
@@ -1225,10 +1227,10 @@ public class RedisMessageBroker implements MessageListener {
             
             // messageHashToId가 null인 경우 초기화
             if (messageHashToId == null) {
-                log.warn("[{}][RedisMessageBroker] messageHashToId가 null입니다. 초기화를 진행합니다.", instanceId);
+                logger.warn("[{}][RedisMessageBroker] messageHashToId가 null입니다. 초기화를 진행합니다.", instanceId);
                 // ConcurrentHashMap으로 초기화 (이미 final로 선언되어 있으므로 재할당 불가)
                 // 대신 안전하게 처리
-                log.info("[{}][RedisMessageBroker] messageHashToId null 처리 완료", instanceId);
+                logger.info("[{}][RedisMessageBroker] messageHashToId null 처리 완료", instanceId);
             }
             
             // 중복 메시지 체크 - 이미 처리된 메시지인지 확인
@@ -1238,12 +1240,12 @@ public class RedisMessageBroker implements MessageListener {
                 MessageInfo existingInfo = processedMessages.get(existingId);
                 
                 if (existingInfo != null && !existingInfo.isExpired()) {
-                    log.warn("[{}][RedisMessageBroker] 중복 메시지 무시: channel={}, hash={}, existingId={}", 
+                    logger.warn("[{}][RedisMessageBroker] 중복 메시지 무시: channel={}, hash={}, existingId={}", 
                             instanceId, channel, messageHash, existingId);
                     return; // 중복 메시지는 처리하지 않고 종료
                 } else {
                     // 만료된 메시지 정보 정리
-                    log.debug("[{}][RedisMessageBroker] 만료된 메시지 정보 정리: hash={}", instanceId, messageHash);
+                    logger.debug("[{}][RedisMessageBroker] 만료된 메시지 정보 정리: hash={}", instanceId, messageHash);
                     messageHashToId.remove(messageHash);
                     if (existingId != null) {
                         processedMessages.remove(existingId);
@@ -1268,7 +1270,7 @@ public class RedisMessageBroker implements MessageListener {
                     cleanupOldMessageHashes();
                 }
             } else {
-                log.warn("[{}][RedisMessageBroker] messageHashToId가 null이므로 해시 저장을 건너뜁니다: hash={}", 
+                logger.warn("[{}][RedisMessageBroker] messageHashToId가 null이므로 해시 저장을 건너뜁니다: hash={}", 
                         instanceId, messageHash);
             }
             
@@ -1276,7 +1278,7 @@ public class RedisMessageBroker implements MessageListener {
             broadcastToRoom(channel, payload);
             
         } catch (Exception e) {
-            log.error("[{}][RedisMessageBroker] 메시지 처리 중 오류 발생: {}", instanceId, e.getMessage(), e);
+            logger.error("[{}][RedisMessageBroker] 메시지 처리 중 오류 발생: {}", instanceId, e.getMessage(), e);
         }
     }
     
@@ -1307,7 +1309,7 @@ public class RedisMessageBroker implements MessageListener {
             // 채널에서 방 ID 추출
             String channelRoomId = channel.substring("chat:room:".length());
             
-            log.info("[{}][RedisMessageBroker] 채팅방 메시지 처리: channelRoomId={}", instanceId, channelRoomId);
+            logger.info("[{}][RedisMessageBroker] 채팅방 메시지 처리: channelRoomId={}", instanceId, channelRoomId);
             
             // 메시지를 JSON으로 파싱하여 객체로 변환
             Object messageObject = objectMapper.readValue(messageBody, Object.class);
@@ -1325,28 +1327,28 @@ public class RedisMessageBroker implements MessageListener {
                 
                 // 🔥 중요: 채널의 roomId와 메시지의 roomId가 일치하는지 확인
                 if (!channelRoomId.equals(dto.getRoomId())) {
-                    log.warn("[{}][RedisMessageBroker] 채널과 메시지 roomId 불일치 - channelRoomId={}, messageRoomId={}, 메시지 무시", 
+                    logger.warn("[{}][RedisMessageBroker] 채널과 메시지 roomId 불일치 - channelRoomId={}, messageRoomId={}, 메시지 무시", 
                             instanceId, channelRoomId, dto.getRoomId());
                     return;
                 }
                 
                 // 🔥 추가 검증: 메시지의 roomId가 유효한지 확인
                 if (dto.getRoomId() == null || dto.getRoomId().trim().isEmpty()) {
-                    log.warn("[{}][RedisMessageBroker] 메시지 roomId가 비어있음 - 메시지 무시", instanceId);
+                    logger.warn("[{}][RedisMessageBroker] 메시지 roomId가 비어있음 - 메시지 무시", instanceId);
                     return;
                 }
                 
                 String dest = "/topic/chat/room/" + dto.getRoomId();    // 프론트 구독 경로
                 messagingTemplate.convertAndSend(dest, dto);
-                log.info("[{}][RedisMessageBroker] WebSocket 전송 완료 -> dest={}, msgId={}, roomId={}, channel={}", 
+                logger.info("[{}][RedisMessageBroker] WebSocket 전송 완료 -> dest={}, msgId={}, roomId={}, channel={}", 
                         instanceId, dest, dto.getMessageId(), dto.getRoomId(), channel);
             } catch (Exception e) {
-                log.warn("[{}][RedisMessageBroker] ChatMessagePush 파싱 실패, 일반 메시지로 처리: {}", 
+                logger.warn("[{}][RedisMessageBroker] ChatMessagePush 파싱 실패, 일반 메시지로 처리: {}", 
                         instanceId, e.getMessage());
             }
             
         } catch (Exception e) {
-            log.error("[{}][RedisMessageBroker] 채팅방 메시지 처리 실패: channel={}, error={}", 
+            logger.error("[{}][RedisMessageBroker] 채팅방 메시지 처리 실패: channel={}, error={}", 
                     instanceId, channel, e.getMessage(), e);
         }
     }
@@ -1362,7 +1364,7 @@ public class RedisMessageBroker implements MessageListener {
             // 채널에서 사용자 ID 추출
             String userId = channel.substring("chat:user:".length());
             
-            log.info("[{}][RedisMessageBroker] 사용자 메시지 처리: userId={}", instanceId, userId);
+            logger.info("[{}][RedisMessageBroker] 사용자 메시지 처리: userId={}", instanceId, userId);
             
             // 메시지를 JSON으로 파싱하여 객체로 변환
             Object messageObject = objectMapper.readValue(messageBody, Object.class);
@@ -1379,10 +1381,10 @@ public class RedisMessageBroker implements MessageListener {
                 ChatRoomUpdateMessage dto =
                     objectMapper.readValue(messageBody, ChatRoomUpdateMessage.class);
                 messagingTemplate.convertAndSendToUser(userId, "/queue/chat/rooms", dto);
-                log.info("[{}][RedisMessageBroker] 개인 사이드바 업데이트 전송 완료 -> user={}, dest=/queue/chat/rooms, roomId={}", 
+                logger.info("[{}][RedisMessageBroker] 개인 사이드바 업데이트 전송 완료 -> user={}, dest=/queue/chat/rooms, roomId={}", 
                         instanceId, userId, dto.getRoomId());
             } catch (Exception e) {
-                log.warn("[{}][RedisMessageBroker] ChatRoomUpdateMessage 파싱 실패, 일반 메시지로 처리: {}", 
+                logger.warn("[{}][RedisMessageBroker] ChatRoomUpdateMessage 파싱 실패, 일반 메시지로 처리: {}", 
                         instanceId, e.getMessage());
                 
                 // 파싱 실패 시에도 로컬 메시지 핸들러를 통해 처리 시도
@@ -1390,15 +1392,15 @@ public class RedisMessageBroker implements MessageListener {
                     try {
                         String messageId = generateMessageId();
                         localMessageHandler.handleLocalMessage(channel, messageBody, messageId);
-                        log.info("[{}][RedisMessageBroker] 로컬 메시지 핸들러를 통한 사이드바 업데이트 처리 완료", instanceId);
+                        logger.info("[{}][RedisMessageBroker] 로컬 메시지 핸들러를 통한 사이드바 업데이트 처리 완료", instanceId);
                     } catch (Exception handlerException) {
-                        log.error("[{}][RedisMessageBroker] 로컬 메시지 핸들러 처리 실패: {}", instanceId, handlerException.getMessage());
+                        logger.error("[{}][RedisMessageBroker] 로컬 메시지 핸들러 처리 실패: {}", instanceId, handlerException.getMessage());
                     }
                 }
             }
             
         } catch (Exception e) {
-            log.error("[{}][RedisMessageBroker] 사용자 메시지 처리 실패: channel={}, error={}", 
+            logger.error("[{}][RedisMessageBroker] 사용자 메시지 처리 실패: channel={}, error={}", 
                     instanceId, channel, e.getMessage(), e);
         }
     }
@@ -1411,7 +1413,7 @@ public class RedisMessageBroker implements MessageListener {
      */
     private void handleGeneralMessage(String channel, String messageBody) {
         try {
-            log.info("[{}][RedisMessageBroker] 일반 메시지 처리: channel={}", instanceId, channel);
+            logger.info("[{}][RedisMessageBroker] 일반 메시지 처리: channel={}", instanceId, channel);
             
             // 메시지를 JSON으로 파싱하여 객체로 변환
             Object messageObject = objectMapper.readValue(messageBody, Object.class);
@@ -1425,7 +1427,7 @@ public class RedisMessageBroker implements MessageListener {
             // 여기에 추가적인 일반 메시지 처리 로직을 구현할 수 있습니다
             
         } catch (Exception e) {
-            log.error("[{}][RedisMessageBroker] 일반 메시지 처리 실패: channel={}, error={}", 
+            logger.error("[{}][RedisMessageBroker] 일반 메시지 처리 실패: channel={}, error={}", 
                     instanceId, channel, e.getMessage(), e);
         }
     }
@@ -1440,7 +1442,7 @@ public class RedisMessageBroker implements MessageListener {
                 return; // 정리할 필요 없음
             }
             
-            log.info("[{}][RedisMessageBroker] messageHashToId 크기 제한 정리 시작: 현재 크기={}", 
+            logger.info("[{}][RedisMessageBroker] messageHashToId 크기 제한 정리 시작: 현재 크기={}", 
                     instanceId, messageHashToId.size());
             
             // 시간 기반으로 정렬하여 오래된 데이터 찾기
@@ -1477,16 +1479,16 @@ public class RedisMessageBroker implements MessageListener {
                         String messageId = removedTimeBasedId.split("_", 2)[1]; // messageId 부분 추출
                         processedMessages.remove(messageId);
                     } catch (Exception ex) {
-                        log.debug("[{}][RedisMessageBroker] 메시지 ID 파싱 실패: {}", instanceId, removedTimeBasedId);
+                        logger.debug("[{}][RedisMessageBroker] 메시지 ID 파싱 실패: {}", instanceId, removedTimeBasedId);
                     }
                 }
             }
             
-            log.info("[{}][RedisMessageBroker] messageHashToId 크기 제한 정리 완료: 제거된 항목={}개, 남은 크기={}", 
+            logger.info("[{}][RedisMessageBroker] messageHashToId 크기 제한 정리 완료: 제거된 항목={}개, 남은 크기={}", 
                     instanceId, removed, messageHashToId.size());
             
         } catch (Exception e) {
-            log.error("[{}][RedisMessageBroker] messageHashToId 크기 제한 정리 중 오류 발생: {}", 
+            logger.error("[{}][RedisMessageBroker] messageHashToId 크기 제한 정리 중 오류 발생: {}", 
                     instanceId, e.getMessage(), e);
         }
     }
@@ -1512,7 +1514,7 @@ public class RedisMessageBroker implements MessageListener {
                 return timeBasedId;
             }
         } catch (Exception e) {
-            log.debug("[RedisMessageBroker] timeBasedId 파싱 실패: {}", timeBasedId);
+            logger.debug("[RedisMessageBroker] timeBasedId 파싱 실패: {}", timeBasedId);
             return timeBasedId; // 파싱 실패 시 원본 반환
         }
     }
@@ -1530,7 +1532,7 @@ public class RedisMessageBroker implements MessageListener {
             Map<String, Object> messageMap = objectMapper.readValue(messageWithSender, Map.class);
             return (String) messageMap.get("senderInstanceId");
         } catch (Exception e) {
-            log.debug("[RedisMessageBroker] 발행자 ID 추출 실패: {}", e.getMessage());
+            logger.debug("[RedisMessageBroker] 발행자 ID 추출 실패: {}", e.getMessage());
             return null;
         }
     }
@@ -1549,7 +1551,7 @@ public class RedisMessageBroker implements MessageListener {
             Object originalMessage = messageMap.get("originalMessage");
             return objectMapper.writeValueAsString(originalMessage);
         } catch (Exception e) {
-            log.debug("[RedisMessageBroker] 원본 메시지 추출 실패: {}", e.getMessage());
+            logger.debug("[RedisMessageBroker] 원본 메시지 추출 실패: {}", e.getMessage());
             return messageWithSender; // 추출 실패 시 원본 반환
         }
     }

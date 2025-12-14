@@ -1,7 +1,8 @@
 package com.talktrip.talktrip.global.webSocket;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.security.core.Authentication;
@@ -14,9 +15,10 @@ import java.net.URI;
 import java.util.Map;
 
 @Component
-@Slf4j
 @RequiredArgsConstructor
 public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketHandshakeInterceptor.class);
 
     // 이 인터셉터를 적용할 WS 엔드포인트 prefix (예: WebSocketConfig에서 등록한 경로)
     private static final String WS_PATH_PREFIX = "/ws/websocket";
@@ -46,8 +48,8 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
         }
 
         // 필요 시 디버그 로그 (운영에선 debug 레벨 권장)
-        if (log.isDebugEnabled()) {
-            log.debug("beforeHandshake: path={}, principalPresent={}",
+        if (logger.isDebugEnabled()) {
+            logger.debug("beforeHandshake: path={}, principalPresent={}",
                     request.getURI().getPath(),
                     authentication != null);
         }
@@ -67,13 +69,13 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
             return;
         }
 
-        if (log.isDebugEnabled()) {
-            log.debug("afterHandshake 완료. path={}, error={}",
+        if (logger.isDebugEnabled()) {
+            logger.debug("afterHandshake 완료. path={}, error={}",
                     request.getURI().getPath(),
                     exception == null ? "none" : exception.getClass().getSimpleName());
         }
         if (exception != null){
-            log.error("websocket HandShakerInterception exception:",exception);
+            logger.error("websocket HandShakerInterception exception:",exception);
 
         }
     }

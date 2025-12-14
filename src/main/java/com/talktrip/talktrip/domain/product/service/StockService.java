@@ -3,7 +3,8 @@ package com.talktrip.talktrip.domain.product.service;
 import com.talktrip.talktrip.domain.product.entity.ProductOption;
 import com.talktrip.talktrip.domain.product.repository.ProductOptionRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,11 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
  * 재고 관리 서비스
  * 재고 확인, 차감, 복원 및 변경 이력을 추적하고 관리
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class StockService {
+
+    private static final Logger logger = LoggerFactory.getLogger(StockService.class);
 
     private final ProductOptionRepository productOptionRepository;
 
@@ -44,7 +46,7 @@ public class StockService {
         // 재고 변경 이력 기록
         recordStockChange(productOptionId, -quantity, "ORDER_CREATED");
         
-        log.info("재고 차감 완료: productOptionId={}, optionName={}, beforeStock={}, quantity={}, afterStock={}", 
+        logger.info("재고 차감 완료: productOptionId={}, optionName={}, beforeStock={}, quantity={}, afterStock={}", 
                 productOptionId, productOption.getOptionName(), beforeStock, quantity, productOption.getStock());
         
         return productOption;
@@ -60,7 +62,7 @@ public class StockService {
                 .orElse(null);
         
         if (productOption == null) {
-            log.warn("재고 복원 실패: 옵션을 찾을 수 없습니다. productOptionId={}, quantity={}", 
+            logger.warn("재고 복원 실패: 옵션을 찾을 수 없습니다. productOptionId={}, quantity={}", 
                     productOptionId, quantity);
             return;
         }
@@ -71,7 +73,7 @@ public class StockService {
         // 재고 변경 이력 기록
         recordStockChange(productOptionId, quantity, "ORDER_CANCELLED");
         
-        log.info("재고 복원 완료: productOptionId={}, optionName={}, beforeStock={}, quantity={}, afterStock={}", 
+        logger.info("재고 복원 완료: productOptionId={}, optionName={}, beforeStock={}, quantity={}, afterStock={}", 
                 productOptionId, productOption.getOptionName(), beforeStock, quantity, productOption.getStock());
     }
 
@@ -95,11 +97,11 @@ public class StockService {
      * @param quantity 변경 수량 (음수: 차감, 양수: 증가)
      * @param reason 변경 사유 (ORDER_CREATED, ORDER_CANCELLED 등)
      */
-    private void recordStockChange(Long productOptionId, int quantity, String reason) {
+    public void recordStockChange(Long productOptionId, int quantity, String reason) {
         try {
             // 실제 구현에서는 재고 변경 이력 테이블에 기록
             // 여기서는 로그만 남김
-            log.info("재고 변경 이력: productOptionId={}, quantity={}, reason={}", 
+            logger.info("재고 변경 이력: productOptionId={}, quantity={}, reason={}", 
                     productOptionId, quantity, reason);
             
             // 필요 시 재고 변경 이력 엔티티에 저장
@@ -111,7 +113,7 @@ public class StockService {
             //     .build();
             // stockHistoryRepository.save(stockHistory);
         } catch (Exception e) {
-            log.error("재고 변경 이력 기록 실패: productOptionId={}, quantity={}, reason={}", 
+            logger.error("재고 변경 이력 기록 실패: productOptionId={}, quantity={}, reason={}", 
                     productOptionId, quantity, reason, e);
         }
     }

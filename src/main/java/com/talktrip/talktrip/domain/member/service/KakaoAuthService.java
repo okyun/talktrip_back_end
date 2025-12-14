@@ -25,8 +25,9 @@ import java.util.Map;
 @Service
 @Transactional
 @RequiredArgsConstructor
-@Slf4j
 public class KakaoAuthService {
+
+    private static final Logger logger = LoggerFactory.getLogger(KakaoAuthService.class);
 
     private final PasswordEncoder passwordEncoder;
     private final MemberRepository memberRepository;
@@ -54,7 +55,7 @@ public class KakaoAuthService {
     }
 
     public MemberResponseDTO loginWithKakao(String code) {
-        log.info("Kakao login code : " + code);
+        logger.info("Kakao login code : " + code);
         // 1. 토큰 요청
         RestTemplate rest = new RestTemplate();
         HttpHeaders headers = new HttpHeaders();
@@ -70,8 +71,8 @@ public class KakaoAuthService {
         HttpEntity<MultiValueMap<String, String>> tokenRequest = new HttpEntity<>(params, headers);
         Map tokenRes = rest.postForObject(tokenUri, tokenRequest, Map.class);
 
-        log.info("tokenRequest: {}", tokenRequest);
-        log.info("tokenRes: {}",tokenRes);
+        logger.info("tokenRequest: {}", tokenRequest);
+        logger.info("tokenRes: {}",tokenRes);
         String accessToken = (String) tokenRes.get("access_token");
 
         // 2. 사용자 정보 요청
@@ -89,8 +90,8 @@ public class KakaoAuthService {
         Map<String, Object> kakaoAccount = (Map<String, Object>) profileRes.getBody().get("kakao_account");
         Map<String, Object> profile = (Map<String, Object>) kakaoAccount.get("profile");
 
-        log.info("kakaoAccount : {}", kakaoAccount);
-        log.info("profile: {}", profile);
+        logger.info("kakaoAccount : {}", kakaoAccount);
+        logger.info("profile: {}", profile);
 
         String email = (String) kakaoAccount.get("email");
         String nickname = RandomNicknameGenerator.generate();

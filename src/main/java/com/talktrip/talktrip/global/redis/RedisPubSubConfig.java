@@ -1,7 +1,8 @@
 package com.talktrip.talktrip.global.redis;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -27,10 +28,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 2. 메시지 처리용 스레드 풀 설정
  * 3. 오류 처리 핸들러 설정
  */
-@Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class RedisPubSubConfig {
+
+    private static final Logger logger = LoggerFactory.getLogger(RedisPubSubConfig.class);
 
     /**
      * Redis 메시지 처리를 위한 전용 스레드 풀 생성
@@ -80,16 +82,16 @@ public class RedisPubSubConfig {
             @Override
             public void handleError(Throwable t) {
                 // 기본 오류 로그 출력
-                log.error("[RedisPubSub] Redis 메시지 처리 중 오류 발생: {}", t.getMessage(), t);
+                logger.error("[RedisPubSub] Redis 메시지 처리 중 오류 발생: {}", t.getMessage(), t);
                 
                 // Redis 연결 오류인 경우 재연결 시도 로그
                 if (t instanceof org.springframework.data.redis.RedisConnectionFailureException) {
-                    log.warn("[RedisPubSub] Redis 연결 오류 감지, 재연결 시도 중...");
+                    logger.warn("[RedisPubSub] Redis 연결 오류 감지, 재연결 시도 중...");
                 }
                 
                 // 메시지 직렬화 오류인 경우 (JSON 파싱 실패 등)
                 if (t instanceof com.fasterxml.jackson.core.JsonProcessingException) {
-                    log.error("[RedisPubSub] JSON 직렬화/역직렬화 오류: {}", t.getMessage());
+                    logger.error("[RedisPubSub] JSON 직렬화/역직렬화 오류: {}", t.getMessage());
                 }
             }
         };
@@ -116,7 +118,7 @@ public class RedisPubSubConfig {
             ErrorHandler redisErrorHandler,
             Executor redisMessageExecutor
     ) {
-        log.info("[RedisPubSubConfig] Redis 메시지 리스너 컨테이너 설정 시작");
+        logger.info("[RedisPubSubConfig] Redis 메시지 리스너 컨테이너 설정 시작");
         
         // Redis 메시지 리스너 컨테이너 생성
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
@@ -130,7 +132,7 @@ public class RedisPubSubConfig {
         // 메시지 처리를 위한 스레드 풀 설정 (병렬 처리로 성능 향상)
         container.setTaskExecutor(redisMessageExecutor);
 
-        log.info("[RedisPubSubConfig] Redis 메시지 리스너 컨테이너 설정 완료");
+        logger.info("[RedisPubSubConfig] Redis 메시지 리스너 컨테이너 설정 완료");
         return container;
     }
 
@@ -160,9 +162,9 @@ public class RedisPubSubConfig {
             try {
                 String channel = "chat:room:" + roomId;
                 container.removeMessageListener(subscriber, new ChannelTopic(channel));
-                log.info("[RedisSubscriptionManager] 채팅방 채널 구독 해제: {}", channel);
+                logger.info("[RedisSubscriptionManager] 채팅방 채널 구독 해제: {}", channel);
             } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 채팅방 채널 구독 해제 실패: roomId={}, error={}", 
+                logger.error("[RedisSubscriptionManager] 채팅방 채널 구독 해제 실패: roomId={}, error={}", 
                         roomId, e.getMessage(), e);
             }
         }
@@ -178,9 +180,9 @@ public class RedisPubSubConfig {
             try {
                 String channel = "chat:user:" + userId;
                 container.removeMessageListener(subscriber, new ChannelTopic(channel));
-                log.info("[RedisSubscriptionManager] 사용자 채널 구독 해제: {}", channel);
+                logger.info("[RedisSubscriptionManager] 사용자 채널 구독 해제: {}", channel);
             } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 사용자 채널 구독 해제 실패: userId={}, error={}", 
+                logger.error("[RedisSubscriptionManager] 사용자 채널 구독 해제 실패: userId={}, error={}", 
                         userId, e.getMessage(), e);
             }
         }
@@ -194,9 +196,9 @@ public class RedisPubSubConfig {
         public void unsubscribeFromPattern(String pattern) {
             try {
                 container.removeMessageListener(subscriber, new PatternTopic(pattern));
-                log.info("[RedisSubscriptionManager] 패턴 구독 해제: {}", pattern);
+                logger.info("[RedisSubscriptionManager] 패턴 구독 해제: {}", pattern);
             } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 패턴 구독 해제 실패: pattern={}, error={}", 
+                logger.error("[RedisSubscriptionManager] 패턴 구독 해제 실패: pattern={}, error={}", 
                         pattern, e.getMessage(), e);
             }
         }
@@ -206,15 +208,15 @@ public class RedisPubSubConfig {
          */
         public void unsubscribeAll() {
             try {
-                log.info("[RedisSubscriptionManager] 모든 구독 해제 시작");
+                logger.info("[RedisSubscriptionManager] 모든 구독 해제 시작");
                 
                 // 패턴 기반 구독 해제
                 unsubscribeFromPattern("chat:room:*");
                 unsubscribeFromPattern("chat:user:*");
                 
-                log.info("[RedisSubscriptionManager] 모든 구독 해제 완료");
+                logger.info("[RedisSubscriptionManager] 모든 구독 해제 완료");
             } catch (Exception e) {
-                log.error("[RedisSubscriptionManager] 모든 구독 해제 실패: error={}", e.getMessage(), e);
+                logger.error("[RedisSubscriptionManager] 모든 구독 해제 실패: error={}", e.getMessage(), e);
             }
         }
         

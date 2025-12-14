@@ -23,8 +23,9 @@ import com.talktrip.talktrip.domain.product.service.StockService;
 import com.talktrip.talktrip.domain.order.event.OrderEventPublisher;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -38,11 +39,12 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class OrderService {
+
+    private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
 
     private final ProductRepository productRepository;
     private final MemberRepository memberRepository;
@@ -105,9 +107,9 @@ public class OrderService {
         // 주문 생성 이벤트 발행
         try {
             orderEventPublisher.publishOrderCreated(order);
-            log.info("주문 생성 이벤트 발행 완료: orderId={}, orderCode={}", order.getId(), order.getOrderCode());
+            logger.info("주문 생성 이벤트 발행 완료: orderId={}, orderCode={}", order.getId(), order.getOrderCode());
         } catch (Exception e) {
-            log.error("주문 생성 이벤트 발행 실패: orderId={}, orderCode={}", order.getId(), order.getOrderCode(), e);
+            logger.error("주문 생성 이벤트 발행 실패: orderId={}, orderCode={}", order.getId(), order.getOrderCode(), e);
             // 이벤트 발행 실패는 주문 생성 자체를 롤백하지 않음 (비동기 처리)
         }
 

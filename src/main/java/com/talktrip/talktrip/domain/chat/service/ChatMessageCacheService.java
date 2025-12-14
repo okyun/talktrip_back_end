@@ -2,17 +2,19 @@ package com.talktrip.talktrip.domain.chat.service;
 
 import com.talktrip.talktrip.domain.chat.entity.ChatMessage;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatMessageCacheService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ChatMessageCacheService.class);
 
     private final StringRedisTemplate stringRedisTemplate;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -45,7 +47,7 @@ public class ChatMessageCacheService {
             redisTemplate.expire(key, Duration.ofDays(7));
 
         } catch (Exception e) {
-            log.warn("Redis lastMessage 캐싱 실패 - roomId: {}, error: {}",
+            logger.warn("Redis lastMessage 캐싱 실패 - roomId: {}, error: {}",
                     message.getRoomId(), e.getMessage());
         }
     }
@@ -59,7 +61,7 @@ public class ChatMessageCacheService {
             // 선택: TTL
             stringRedisTemplate.expire(key, Duration.ofDays(7));
         } catch (Exception e) {
-            log.warn("Redis unreadCount INCR 실패 - roomId: {}, email: {}, error: {}",
+            logger.warn("Redis unreadCount INCR 실패 - roomId: {}, email: {}, error: {}",
                     roomId, email, e.getMessage());
         }
     }
@@ -73,7 +75,7 @@ public class ChatMessageCacheService {
             // 또는 아예 삭제하는 것도 가능
             // stringRedisTemplate.delete(key);
         } catch (Exception e) {
-            log.warn("Redis unreadCount clear 실패 - roomId: {}, email: {}, error: {}",
+            logger.warn("Redis unreadCount clear 실패 - roomId: {}, email: {}, error: {}",
                     roomId, email, e.getMessage());
         }
     }

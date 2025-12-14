@@ -4,7 +4,8 @@ import com.talktrip.talktrip.domain.chat.dto.response.ChatMessageErrorResponse;
 import com.talktrip.talktrip.domain.chat.dto.request.ChatMessageRequestDto;
 import com.talktrip.talktrip.global.util.SeoulTimeUtil;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
@@ -19,10 +20,11 @@ import java.util.Map;
  * - 메시지 전송 에러 처리
  * - 클라이언트에게 에러 정보 전달
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class WebSocketErrorHandler {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketErrorHandler.class);
 
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -41,7 +43,7 @@ public class WebSocketErrorHandler {
                                  String errorCode, 
                                  String details) {
         try {
-            log.error("WebSocket 메시지 처리 에러 - 사용자: {}, 에러: {}", 
+            logger.error("WebSocket 메시지 처리 에러 - 사용자: {}, 에러: {}", 
                      principal != null ? principal.getName() : "unknown", error.getMessage(), error);
 
             // 에러 응답 생성
@@ -65,7 +67,7 @@ public class WebSocketErrorHandler {
             }
 
         } catch (Exception e) {
-            log.error("에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
+            logger.error("에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
         }
     }
 
@@ -77,7 +79,7 @@ public class WebSocketErrorHandler {
      */
     public void handleConnectionError(String sessionId, Throwable error) {
         try {
-            log.error("WebSocket 연결 에러 - 세션: {}, 에러: {}", sessionId, error.getMessage(), error);
+            logger.error("WebSocket 연결 에러 - 세션: {}, 에러: {}", sessionId, error.getMessage(), error);
 
             // 연결 에러 응답 생성
             String errorType = "CONNECTION_ERROR";
@@ -97,7 +99,7 @@ public class WebSocketErrorHandler {
             messagingTemplate.convertAndSend("/topic/connection-errors", errorResponse);
 
         } catch (Exception e) {
-            log.error("연결 에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
+            logger.error("연결 에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
         }
     }
 
@@ -110,7 +112,7 @@ public class WebSocketErrorHandler {
      */
     public void handleSendError(Principal principal, String destination, Throwable error) {
         try {
-            log.error("WebSocket 메시지 전송 에러 - 사용자: {}, 목적지: {}, 에러: {}", 
+            logger.error("WebSocket 메시지 전송 에러 - 사용자: {}, 목적지: {}, 에러: {}", 
                      principal != null ? principal.getName() : "unknown", destination, error.getMessage(), error);
 
             // 전송 에러 응답 생성
@@ -137,7 +139,7 @@ public class WebSocketErrorHandler {
             }
 
         } catch (Exception e) {
-            log.error("전송 에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
+            logger.error("전송 에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
         }
     }
 
@@ -150,7 +152,7 @@ public class WebSocketErrorHandler {
      */
     public void handleGeneralError(Principal principal, Throwable error, String context) {
         try {
-            log.error("WebSocket 일반 에러 - 사용자: {}, 컨텍스트: {}, 에러: {}", 
+            logger.error("WebSocket 일반 에러 - 사용자: {}, 컨텍스트: {}, 에러: {}", 
                      principal != null ? principal.getName() : "unknown", context, error.getMessage(), error);
 
             // 일반 에러 응답 생성
@@ -177,7 +179,7 @@ public class WebSocketErrorHandler {
             }
 
         } catch (Exception e) {
-            log.error("일반 에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
+            logger.error("일반 에러 핸들러에서 예외 발생: {}", e.getMessage(), e);
         }
     }
 }

@@ -2,7 +2,8 @@ package com.talktrip.talktrip.global.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,9 +18,10 @@ import java.util.Map;
 
 import static com.querydsl.collections.CollQueryFunctions.coalesce;
 
-@Slf4j
 @Component
 public class JWTUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(JWTUtil.class);
 
     private static final ObjectMapper OM = new ObjectMapper();
     private static final Base64.Encoder B64U_ENC = Base64.getUrlEncoder().withoutPadding();
@@ -73,7 +75,7 @@ public class JWTUtil {
 
             return signingInput + "." + signature;
         } catch (Exception e) {
-            log.error("Error generating JWT token: {}", e.getMessage());
+            logger.error("Error generating JWT token: {}", e.getMessage());
             throw new RuntimeException("Error generating token", e);
         }
     }

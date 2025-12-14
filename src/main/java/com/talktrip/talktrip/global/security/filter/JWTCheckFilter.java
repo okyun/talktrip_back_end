@@ -11,7 +11,8 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -22,8 +23,9 @@ import java.net.URLDecoder;
 import java.util.Map;
 import java.util.Optional;
 @RequiredArgsConstructor
-@Slf4j
 public class JWTCheckFilter extends OncePerRequestFilter {
+
+    private static final Logger logger = LoggerFactory.getLogger(JWTCheckFilter.class);
 
     private final JWTUtil jwtUtil;
     private final MemberRepository memberRepository;
@@ -33,7 +35,7 @@ public class JWTCheckFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String uri = request.getRequestURI();
-        log.info("[JWTCheckFilter] 실행됨 - URI: {}", uri);
+        logger.info("[JWTCheckFilter] 실행됨 - URI: {}", uri);
 
         String authHeader = request.getHeader("Authorization");
         String accessToken = null;
@@ -58,7 +60,7 @@ public class JWTCheckFilter extends OncePerRequestFilter {
                             break;
                         }
                     } catch (Exception e) {
-                        log.error("member 쿠키 파싱 실패: {}", e.getMessage());
+                        logger.error("member 쿠키 파싱 실패: {}", e.getMessage());
                     }
                 }
             }
@@ -67,11 +69,11 @@ public class JWTCheckFilter extends OncePerRequestFilter {
         // 비로그인 허용 경로일 경우 토큰 없이도 통과시킴
         if (accessToken == null) {
             if (isPublicPath(uri)) {
-                log.info("[JWTCheckFilter] 토큰 없음 → 공개 경로, SecurityContext 설정 없이 통과");
+                logger.info("[JWTCheckFilter] 토큰 없음 → 공개 경로, SecurityContext 설정 없이 통과");
                 filterChain.doFilter(request, response);
                 return;
             } else {
-                log.warn("[JWTCheckFilter] 인증 필요 경로에 토큰 없음 → 401 반환");
+                logger.warn("[JWTCheckFilter] 인증 필요 경로에 토큰 없음 → 401 반환");
                 respondWithUnauthorized(response, "MISSING_ACCESS_TOKEN");
                 return;
             }
@@ -95,12 +97,12 @@ public class JWTCheckFilter extends OncePerRequestFilter {
                     new UsernamePasswordAuthenticationToken(customMemberDetails, null, customMemberDetails.getAuthorities());
 
             SecurityContextHolder.getContext().setAuthentication(authToken);
-            log.info("[JWTCheckFilter] 인증 완료 - memberId: {}", customMemberDetails.getId());
+            logger.info("[JWTCheckFilter] 인증 완료 - memberId: {}", customMemberDetails.getId());
 
         } catch (Exception e) {
             // JWT 검증 실패 → 비로그인 허용 경로면 통과, 아니면 401
             if (isPublicPath(uri)) {
-                log.info("[JWTCheckFilter] JWT 검증 실패, 하지만 공개 URI → 비로그인으로 통과");
+                logger.info("[JWTCheckFilter] JWT 검증 실패, 하지만 공개 URI → 비로그인으로 통과");
                 filterChain.doFilter(request, response);
                 return;
             }
