@@ -257,16 +257,16 @@ public class KafkaConfig {
     public ProducerFactory<String, GenericRecord> avroProducerFactory() {
         // Producer 안정성 설정
         Map<String, Object> props = Map.ofEntries(
-                Map.entry(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
-                Map.entry(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class),
-                Map.entry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class),
-                Map.entry(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl),
-                Map.entry(AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS, true),
-                Map.entry(ProducerConfig.ACKS_CONFIG, "1"), // 리더에게 전달 확인
-                Map.entry(ProducerConfig.RETRIES_CONFIG, 3),
-                Map.entry(ProducerConfig.BATCH_SIZE_CONFIG, 16384),
-                Map.entry(ProducerConfig.LINGER_MS_CONFIG, 10),
-                Map.entry(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy") // 압축 알고리즘: none, lz4, gzip, zstd, snappy
+                Map.entry(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers), // Kafka 브로커 서버 주소
+                Map.entry(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class), // Key 직렬화: String 타입
+                Map.entry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class), // Value 직렬화: Avro 형식
+                Map.entry(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, schemaRegistryUrl), // Schema Registry URL (Avro 스키마 관리)
+                Map.entry(AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS, true), // 스키마 자동 등록 여부
+                Map.entry(ProducerConfig.ACKS_CONFIG, "1"), // 리더에게 전달 확인 ("0": 확인 안함, "1": 리더 확인, "all": 복제본까지 확인)
+                Map.entry(ProducerConfig.RETRIES_CONFIG, 3), // 전송 실패 시 재시도 횟수
+                Map.entry(ProducerConfig.BATCH_SIZE_CONFIG, 16384), // 배치 크기 (16KB) - 여러 메시지를 묶어서 전송하여 성능 향상
+                Map.entry(ProducerConfig.LINGER_MS_CONFIG, 10), // 배치 전송 대기 시간 (ms) - 10ms 동안 메시지를 모아서 배치로 전송
+                Map.entry(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy") // 압축 알고리즘: none, lz4, gzip, zstd, snappy (snappy: 빠른 압축/해제)
         );
         
         return new DefaultKafkaProducerFactory<>(props);
