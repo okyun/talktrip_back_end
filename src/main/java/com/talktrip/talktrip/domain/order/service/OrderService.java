@@ -104,7 +104,7 @@ public class OrderService {
 
         orderRepository.save(order);
 
-        // 주문 생성 이벤트 발행
+        // 주문 생성 이벤트 발행 (Avro 형식)
         try {
             orderEventPublisher.publishOrderCreated(order);
             logger.info("주문 생성 이벤트 발행 완료: orderId={}, orderCode={}", order.getId(), order.getOrderCode());
@@ -245,6 +245,17 @@ public class OrderService {
         // (스냅샷 패턴에서는 주문 생성 시점에 재고를 차감하고, 취소 시에만 복원)
 
         orderRepository.save(order);
+
+        // 8. 결제 성공 이벤트 발행
+        try {
+            orderEventPublisher.publishPaymentSuccess(order, payment);
+            logger.info("결제 성공 이벤트 발행 완료: orderId={}, orderCode={}, paymentKey={}", 
+                    order.getId(), order.getOrderCode(), payment.getPaymentKey());
+        } catch (Exception e) {
+            logger.error("결제 성공 이벤트 발행 실패: orderId={}, orderCode={}", 
+                    order.getId(), order.getOrderCode(), e);
+            // 이벤트 발행 실패는 결제 처리에 영향을 주지 않음
+        }
     }
 
     private PaymentMethod mapToPaymentMethod(String methodStr) {

@@ -74,13 +74,4 @@ public class OrderItem {
         orderItem.price = price;
         return orderItem;
     }
-
-    // 재고 복원 메서드 수정 (ProductOptionRepository 주입 필요)
-    public void restoreStock(com.talktrip.talktrip.domain.product.repository.ProductOptionRepository productOptionRepository) {
-        com.talktrip.talktrip.domain.product.entity.ProductOption option = productOptionRepository.findById(this.productOptionId)
-                .orElse(null);
-        if (option != null) {
-            option.addStock(this.quantity);
-        }
-    }
 }

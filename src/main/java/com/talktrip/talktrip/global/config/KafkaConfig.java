@@ -177,6 +177,9 @@ public class KafkaConfig {
 
     /**
      * Avro Kafka Listener Container Factory
+     * 
+     * 외부 시스템에서 Avro 형식의 메시지를 수신할 때 사용합니다.
+     * 내부 처리용 Consumer는 ApplicationEventPublisher/EventListener 패턴으로 대체되었습니다.
      */
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, GenericRecord> avroKafkaListenerContainerFactory() {

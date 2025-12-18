@@ -45,7 +45,7 @@ public class KafkaStreamConfig {
     }
 
     /**
-     * Avro Serde Bean
+     * Avro Serde Bean,(ProductClickProcessor에서 사용 중)
      *
      * Kafka Streams에서 Avro 형식의 메시지를 읽고 쓰기 위한 GenericAvroSerde를 제공합니다.
      * Schema Registry URL이 이미 설정되어 있어 각 Processor에서 주입받아 사용할 수 있습니다.
