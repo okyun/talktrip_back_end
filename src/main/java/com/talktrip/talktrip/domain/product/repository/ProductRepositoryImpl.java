@@ -25,7 +25,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -83,7 +82,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         return JPAExpressions.selectOne()
                 .from(o)
                 .where(o.product.eq(p)
-                        .and(o.startDate.goe(LocalDate.now()))
+                       // .and(o.startDate.goe(LocalDate.now()))
                         .and(o.stock.gt(0)))
                 .exists();
     }
