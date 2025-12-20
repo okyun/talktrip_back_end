@@ -20,7 +20,7 @@ import com.talktrip.talktrip.domain.product.entity.Product;
 import com.talktrip.talktrip.domain.product.entity.ProductOption;
 import com.talktrip.talktrip.domain.product.repository.ProductRepository;
 import com.talktrip.talktrip.domain.product.service.StockService;
-import com.talktrip.talktrip.domain.order.event.OrderEventPublisher;
+import com.talktrip.talktrip.domain.event.order.OrderEventPublisher;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.json.simple.JSONObject;

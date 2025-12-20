@@ -27,7 +27,7 @@ public class MemberController {
     private final MemberService memberService;
 
     @Operation(summary = "카카오 로그인 URL 요청", description = "카카오 로그인 인가 URL을 반환합니다.")
-    @GetMapping("member/kakao-login-url")
+    @GetMapping("/member/kakao-login-url")
     public ResponseEntity<?> getKakaoLoginUrl() {
         String kakaoUrl = kakaoAuthService.getKakaoAuthorizeUrl();
         return ResponseEntity.ok(Map.of("url", kakaoUrl));
@@ -35,7 +35,7 @@ public class MemberController {
 
 
     @Operation(summary = "카카오 로그인 콜백", description = "인가 코드를 통해 로그인 처리를 수행합니다.")
-    @PostMapping("member/kakao")
+    @PostMapping("/member/kakao")
     public Map<String, Object> kakaoLogin(String code) {
 
         MemberResponseDTO memberDTO = kakaoAuthService.loginWithKakao(code);

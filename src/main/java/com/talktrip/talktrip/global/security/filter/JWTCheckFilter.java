@@ -107,7 +107,7 @@ public class JWTCheckFilter extends OncePerRequestFilter {
                 return;
             }
 
-            log.warn("[JWTCheckFilter] JWT 검증 실패: {}", e.getMessage());
+            logger.warn("[JWTCheckFilter] JWT 검증 실패: {}", e.getMessage());
             respondWithUnauthorized(response, "INVALID_OR_EXPIRED_TOKEN");
             return;
         }
