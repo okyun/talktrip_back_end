@@ -21,10 +21,14 @@ import java.util.Map;
 @Configuration
 public class KafkaStreamConfig {
 
-    private KafkaProperties kafkaProperties;
+    private final KafkaProperties kafkaProperties;
 
     @Value("${spring.kafka.properties.schema.registry.url}")
     private String schemaRegistryUrl;
+
+    public KafkaStreamConfig(KafkaProperties kafkaProperties) {
+        this.kafkaProperties = kafkaProperties;
+    }
 
     /**
      * 기본 Kafka Streams 설정
@@ -38,6 +42,11 @@ public class KafkaStreamConfig {
     public KafkaStreamsConfiguration defaultKafkaStreamsConfig() {
         Map<String, Object> props = kafkaProperties.getStreams().buildProperties(null);
 
+        // application.id가 없으면 기본값 설정
+        if (!props.containsKey(StreamsConfig.APPLICATION_ID_CONFIG)) {
+            props.put(StreamsConfig.APPLICATION_ID_CONFIG, "talktrip-streams-app");
+        }
+        
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 

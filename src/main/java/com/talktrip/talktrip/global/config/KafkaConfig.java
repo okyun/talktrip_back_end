@@ -1,7 +1,7 @@
 package com.talktrip.talktrip.global.config;
 
-import com.talktrip.talktrip.domain.kafka.dto.order.OrderEvent;
-import com.talktrip.talktrip.domain.kafka.dto.product.ProductEvent;
+import com.talktrip.talktrip.domain.messaging.dto.order.OrderEvent;
+import com.talktrip.talktrip.domain.messaging.dto.product.ProductEvent;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroDeserializerConfig;
@@ -281,5 +281,33 @@ public class KafkaConfig {
     @Bean
     public KafkaTemplate<String, GenericRecord> avroKafkaTemplate() {
         return new KafkaTemplate<>(avroProducerFactory());
+    }
+
+    /**
+     * JSON Producer Factory (범용)
+     * 
+     * ProductClickEventDTO 등 JSON 형식의 DTO를 발행하기 위한 Factory입니다.
+     * 타입 정보를 헤더에 추가하지 않아 다른 시스템과의 호환성이 좋습니다.
+     */
+    @Bean
+    public ProducerFactory<String, Object> jsonProducerFactory() {
+        Map<String, Object> props = Map.ofEntries(
+                Map.entry(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                Map.entry(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class),
+                Map.entry(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class),
+                Map.entry(JsonSerializer.ADD_TYPE_INFO_HEADERS, false) // 타입 정보 헤더 추가 안함 (호환성)
+        );
+        
+        return new DefaultKafkaProducerFactory<>(props);
+    }
+
+    /**
+     * JSON Kafka Template (범용)
+     * 
+     * ProductClickEventDTO 등 JSON 형식의 메시지를 발행하기 위한 Template입니다.
+     */
+    @Bean("jsonKafkaTemplate")
+    public KafkaTemplate<String, Object> jsonKafkaTemplate() {
+        return new KafkaTemplate<>(jsonProducerFactory());
     }
 }
