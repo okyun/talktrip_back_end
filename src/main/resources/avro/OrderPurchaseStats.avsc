@@ -1,0 +1,27 @@
+{
+  "type": "record",
+  "name": "OrderPurchaseStats",
+  "namespace": "com.talktrip.talktrip.avro",
+  "doc": "주문 구매 통계 스키마 (15분 단위 집계 결과)",
+  "fields": [
+    {
+      "name": "stats",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "OrderPurchaseStat",
+          "doc": "주문 구매 통계 항목",
+          "fields": [
+            {"name": "productId", "type": "long", "doc": "상품 ID"},
+            {"name": "purchaseCount", "type": "long", "doc": "구매 수량"},
+            {"name": "windowStart", "type": {"type": "long", "logicalType": "timestamp-millis"}, "doc": "윈도우 시작 시각 (UTC millis)"},
+            {"name": "windowEnd", "type": {"type": "long", "logicalType": "timestamp-millis"}, "doc": "윈도우 종료 시각 (UTC millis)"}
+          ]
+        }
+      },
+      "doc": "주문 구매 통계 목록 (TOP 30)"
+    }
+  ]
+}
+

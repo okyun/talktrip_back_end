@@ -1,0 +1,33 @@
+{
+  "type": "record",
+  "name": "OrderCreatedEvent",
+  "namespace": "com.talktrip.talktrip.avro",
+  "doc": "주문 생성 이벤트 스키마",
+  "fields": [
+    {"name": "orderId", "type": "long", "doc": "주문 ID"},
+    {"name": "orderCode", "type": "string", "doc": "주문 코드"},
+    {"name": "memberId", "type": ["null", "long"], "default": null, "doc": "주문한 회원 ID (nullable)"},
+    {"name": "totalPrice", "type": "int", "doc": "총 주문 금액"},
+    {"name": "orderStatus", "type": "string", "doc": "주문 상태 (PENDING, SUCCESS, CANCELLED)"},
+    {"name": "createdAt", "type": {"type": "long", "logicalType": "timestamp-millis"}, "doc": "주문 생성 시각"},
+    {
+      "name": "items",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "OrderItemPayload",
+          "doc": "주문 아이템 상세 스키마",
+          "fields": [
+            {"name": "productId", "type": "long", "doc": "상품 ID"},
+            {"name": "productOptionId", "type": ["null", "long"], "default": null, "doc": "상품 옵션 ID (nullable)"},
+            {"name": "quantity", "type": "int", "doc": "주문 수량"},
+            {"name": "price", "type": "int", "doc": "아이템별 가격"}
+          ]
+        }
+      },
+      "doc": "주문된 상품 아이템 목록"
+    }
+  ]
+}
+

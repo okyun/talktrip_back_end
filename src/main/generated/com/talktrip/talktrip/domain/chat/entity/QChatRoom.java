@@ -24,20 +24,11 @@ public class QChatRoom extends EntityPathBase<ChatRoom> {
     //inherited
     public final DateTimePath<java.time.LocalDateTime> createdAt = _super.createdAt;
 
-    public final StringPath lastMessage = createString("lastMessage");
-
-    public final NumberPath<Integer> notReadMessageCount = createNumber("notReadMessageCount", Integer.class);
-
-<<<<<<< HEAD
-    public final StringPath roomAccountId = createString("roomAccountId");
-
-=======
     public final NumberPath<Integer> productId = createNumber("productId", Integer.class);
 
-    public final StringPath roomAccountId = createString("roomAccountId");
-
->>>>>>> 0a3054425c941fa7e57d01c2d2193c9f68455869
     public final StringPath roomId = createString("roomId");
+
+    public final EnumPath<com.talktrip.talktrip.domain.chat.enums.RoomType> roomType = createEnum("roomType", com.talktrip.talktrip.domain.chat.enums.RoomType.class);
 
     public final StringPath title = createString("title");
 

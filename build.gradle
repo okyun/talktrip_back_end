@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.3'
     id 'io.spring.dependency-management' version '1.1.7'
+    id "com.github.davidmc24.gradle.plugin.avro" version "1.9.1"
 }
 
 group = 'com.talktrip'
@@ -25,6 +26,15 @@ configurations {
 
 repositories {
     mavenCentral()
+    // Confluent Maven 리포지토리
+    // Confluent Platform의 Kafka 관련 라이브러리(kafka-avro-serializer, kafka-streams-avro-serde 등)를 다운로드하기 위한 리포지토리
+    // HTTP 프로토콜을 사용하므로 allowInsecureProtocol = true 설정이 필요합니다.
+    // Gradle 6.0 이상에서는 보안상의 이유로 HTTP 리포지토리를 기본적으로 차단하므로,
+    // allowInsecureProtocol 속성을 true로 설정하여 HTTP 리포지토리 접근을 허용합니다.
+    maven {
+        url = uri("http://packages.confluent.io/maven/")
+        allowInsecureProtocol = true
+    }
 }
 
 ext {
@@ -32,13 +42,23 @@ ext {
 }
 
 dependencies {
+    // Kafka
+    implementation 'org.springframework.kafka:spring-kafka' // Kafka를 활용하기 위한 라이브러리
+    implementation 'org.apache.kafka:kafka-streams' // Kafka의 메시지 및 스트림 처리
+    implementation 'org.apache.avro:avro:1.11.3' // 데이터 직렬화를 위한 Avro 라이브러리
+    implementation 'io.confluent:kafka-avro-serializer:7.6.1'// Avro 데이터 다루기 위한 역/직렬화
+    implementation 'io.confluent:kafka-streams-avro-serde:7.6.1'// SerDE 지원을 위한 라이브러리
+    implementation 'io.confluent:kafka-schema-registry-client:7.6.1' // 스키마를 저장하는 저장소
+
+
+
     // Spring
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'jakarta.persistence:jakarta.persistence-api:3.1.0'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    implementation 'com.netflix.graphql.dgs.codegen:graphql-dgs-codegen-gradle:7.0.3'
+    // implementation 'com.netflix.graphql.dgs.codegen:graphql-dgs-codegen-gradle:7.0.3'  // GraphQL 의존성 제거
     runtimeOnly 'com.mysql:mysql-connector-j'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
@@ -121,3 +141,7 @@ clean {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+//tasks.named('test') {
+//    useJUnitPlatform()
+//}

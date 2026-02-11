@@ -86,7 +86,7 @@ public class ProductService {
                 .orElseThrow(() -> new ProductException(ErrorCode.PRODUCT_NOT_FOUND));
 
         int futureStock = product.getProductOptions().stream()
-                .filter(option -> !option.getStartDate().isBefore(LocalDate.now()))
+                //.filter(option -> !option.getStartDate().isBefore(LocalDate.now()))
                 .mapToInt(ProductOption::getStock)
                 .sum();
 

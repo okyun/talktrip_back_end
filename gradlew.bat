@@ -26,6 +26,9 @@
 @rem Set local scope for the variables with windows NT shell
 if "%OS%"=="Windows_NT" setlocal
 
+@rem Set code page to UTF-8 to handle Korean characters
+chcp 65001 >NUL 2>&1
+
 set DIRNAME=%~dp0
 if "%DIRNAME%"=="" set DIRNAME=.
 @rem This is normally unused
@@ -37,6 +40,9 @@ for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
+
+@rem Override JAVA_HOME with Java 21 installation path (ignore environment variable)
+set JAVA_HOME=C:\Users\김옥윤\.jdks\corretto-21.0.8
 
 @rem Find java.exe
 if defined JAVA_HOME goto findJavaFromJavaHome

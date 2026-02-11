@@ -4,20 +4,25 @@
               value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
+        <!-- 파라미터 바인딩 로그를 캡처하는 필터 추가 -->
+        <filter class="com.talktrip.talktrip.global.logger.ParameterCaptureFilter"/>
+        <layout class="com.talktrip.talktrip.global.logger.P6SpyLayout">
             <pattern>${CONSOLE_LOG_PATTERN}</pattern>
-        </encoder>
+        </layout>
     </appender>
 
-    <logger name="org.hibernate.SQL" level="DEBUG"/>
-    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
+    <!-- SQL 쿼리 로깅은 p6spy에서 처리하므로 Hibernate SQL 로그는 완전히 비활성화 -->
+    <logger name="org.hibernate.SQL" level="OFF" additivity="false"/>
+    <!-- 파라미터 바인딩 로그는 필터에서 캡처하고 출력도 함께 -->
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="OFF" additivity="false"/>
     <logger name="org.hibernate.orm.jdbc.bind" level="TRACE"/>
     <logger name="com.talktrip" level="DEBUG"/>
-    <logger name="org.hibernate.SQL" level="DEBUG" />
 
-    <logger name="com.zaxxer.hikari" level="DEBUG"/>
-    <logger name="org.hibernate.engine.jdbc.connections" level="DEBUG"/>
-    <logger name="p6spy" level="INFO"/>
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+    <logger name="org.hibernate.engine.jdbc.connections" level="INFO"/>
+    <logger name="p6spy" level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

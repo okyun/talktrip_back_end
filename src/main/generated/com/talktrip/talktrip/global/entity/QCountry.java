@@ -21,7 +21,7 @@ public class QCountry extends EntityPathBase<Country> {
 
     public final StringPath continent = createString("continent");
 
-    public final NumberPath<Long> id = createNumber("id", Long.class);
+    public final StringPath id = createString("id");
 
     public final StringPath name = createString("name");
 

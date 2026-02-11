@@ -46,7 +46,7 @@ public class KafkaStreamConfig {
         if (!props.containsKey(StreamsConfig.APPLICATION_ID_CONFIG)) {
             props.put(StreamsConfig.APPLICATION_ID_CONFIG, "talktrip-streams-app");
         }
-        
+
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
 
