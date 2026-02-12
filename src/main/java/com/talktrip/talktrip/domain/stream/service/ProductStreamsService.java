@@ -79,7 +79,10 @@ public class ProductStreamsService {
                 return List.of();
             }
 
-            ReadOnlyKeyValueStore<String, List<ProductClickStatResponse>> store = 
+            // Kafka Streams 안에 이미 만들어져 있는 "product-click-top30-store"를 코드에서 꺼내 오는 부분이다.
+            // - PRODUCT_CLICK_TOP30_STORE: ProductClickProcessor 에서 Materialized.as(...) 로 만든 로컬 저장소 이름
+            // - 아래 한 줄로, 이 저장소를 Map처럼 읽을 수 있는 ReadOnlyKeyValueStore 형태로 받아온다 (store.get(key) 사용 가능)
+            ReadOnlyKeyValueStore<String, List<ProductClickStatResponse>> store =
                     kafkaStreams.store(StoreQueryParameters.fromNameAndType(
                             PRODUCT_CLICK_TOP30_STORE,
                             QueryableStoreTypes.keyValueStore()

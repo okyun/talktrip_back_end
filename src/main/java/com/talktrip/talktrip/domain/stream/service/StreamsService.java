@@ -34,7 +34,7 @@ public class StreamsService {
 
     private static final Logger logger = LoggerFactory.getLogger(StreamsService.class);
 
-    private final StreamsBuilderFactoryBean streamsBuilderFactoryBean;
+    private final StreamsBuilderFactoryBean streamsBuilderFactoryBean;// 카프카 스트림 컨테이너를 관리해서 시간 기반 데이터를 조회 하는데 사용된다.
 
     /**
      * KafkaStreams 인스턴스 조회

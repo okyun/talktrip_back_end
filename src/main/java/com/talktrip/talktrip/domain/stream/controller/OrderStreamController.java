@@ -1,6 +1,6 @@
 package com.talktrip.talktrip.domain.stream.controller;
 
-import com.talktrip.talktrip.domain.messaging.avro.AvroEventProducer;
+import com.talktrip.talktrip.domain.messaging.avro.KafkaEventProducer;
 import com.talktrip.talktrip.domain.messaging.dto.order.CreateOrderRequest;
 import com.talktrip.talktrip.domain.messaging.dto.order.OrderEvent;
 import com.talktrip.talktrip.domain.messaging.dto.order.OrderPurchaseStatResponse;
@@ -36,7 +36,39 @@ public class OrderStreamController {
 
     private final OrderStreamsService orderStreamsService;
     private final OrderEventPublisher orderEventPublisher;
-    private final AvroEventProducer avroEventProducer;
+    private final KafkaEventProducer kafkaEventProducer;
+
+
+    /**
+     * 주문 생성 (OrderEvent 발행)
+     *
+     * 서버가 자동으로 orderId를 생성하고,
+     * customerId, quantity, price를 파라미터로 받아서 OrderEvent를 생성하고 발행합니다.
+     *
+     * @param request CreateOrderRequest (customerId, quantity, price)
+     * @return 주문 생성 성공 메시지
+     */
+    @Operation(
+            summary = "주문 생성 (OrderEvent 발행)",
+            description = "서버가 자동으로 orderId를 생성하고, customerId, quantity, price를 받아서 OrderEvent를 발행합니다."
+    )
+    @PostMapping
+    public ResponseEntity<String> createOrder(@RequestBody CreateOrderRequest request) {
+        String orderId = UUID.randomUUID().toString();
+
+        OrderEvent orderEvent = OrderEvent.builder()
+                .orderId(orderId)
+                .customerId(request.getCustomerId())
+                .quantity(request.getQuantity())
+                .price(request.getPrice())
+                .eventType("ORDER_CREATED")
+                .status("PENDING")
+                .build();
+
+        orderEventPublisher.publishOrderEvent(orderEvent);
+
+        return ResponseEntity.ok("Order created");
+    }
 
     /**
      * 주문 구매 통계 TOP 30 조회
@@ -77,36 +109,6 @@ public class OrderStreamController {
         return ResponseEntity.ok(isReady);
     }
 
-    /**
-     * 주문 생성 (OrderEvent 발행)
-     * 
-     * 서버가 자동으로 orderId를 생성하고,
-     * customerId, quantity, price를 파라미터로 받아서 OrderEvent를 생성하고 발행합니다.
-     * 
-     * @param request CreateOrderRequest (customerId, quantity, price)
-     * @return 주문 생성 성공 메시지
-     */
-    @Operation(
-            summary = "주문 생성 (OrderEvent 발행)",
-            description = "서버가 자동으로 orderId를 생성하고, customerId, quantity, price를 받아서 OrderEvent를 발행합니다."
-    )
-    @PostMapping
-    public ResponseEntity<String> createOrder(@RequestBody CreateOrderRequest request) {
-        String orderId = UUID.randomUUID().toString();
-        
-        OrderEvent orderEvent = OrderEvent.builder()
-                .orderId(orderId)
-                .customerId(request.getCustomerId())
-                .quantity(request.getQuantity())
-                .price(request.getPrice())
-                .eventType("ORDER_CREATED")
-                .status("PENDING")
-                .build();
-        
-        orderEventPublisher.publishOrderEvent(orderEvent);
-        
-        return ResponseEntity.ok("Order created");
-    }
 
     /**
      * Avro 주문 이벤트 발행
@@ -134,7 +136,7 @@ public class OrderStreamController {
     ) {
         String orderId = UUID.randomUUID().toString();
         
-        avroEventProducer.publishOrderEvent(orderId, customerId, quantity, price);
+        kafkaEventProducer.publishOrderEvent(orderId, customerId, quantity, price);
         
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);

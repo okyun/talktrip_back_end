@@ -1,6 +1,6 @@
 package com.talktrip.talktrip.domain.stream.controller;
 
-import com.talktrip.talktrip.domain.messaging.avro.AvroEventProducer;
+import com.talktrip.talktrip.domain.messaging.avro.KafkaEventProducer;
 import com.talktrip.talktrip.domain.messaging.dto.product.ProductClickStatResponse;
 import com.talktrip.talktrip.domain.stream.service.ProductStreamsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -9,9 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 상품 관련 Kafka Streams Controller
@@ -30,7 +28,7 @@ import java.util.Map;
 public class ProductStreamController {
 
     private final ProductStreamsService productStreamsService;
-    private final AvroEventProducer avroEventProducer;
+    private final KafkaEventProducer kafkaEventProducer;
 
     /**
      * 상품 클릭 통계 TOP 30 조회
@@ -89,38 +87,12 @@ public class ProductStreamController {
             @RequestParam Long productId,
             @RequestParam(required = false) Long memberId
     ) {
-        avroEventProducer.publishProductEvent(productId, memberId);
+        kafkaEventProducer.publishProductEvent(productId, memberId);
         return ResponseEntity.ok("Product click event published");
     }
 
-    /**
-     * Avro 상품 클릭 이벤트 발행
-     * 
-     * productId, memberId를 파라미터로 받아서 Avro GenericRecord를 생성하고 발행합니다.
-     * 
-     * @param productId 상품 ID
-     * @param memberId 회원 ID (선택적, 기본값: null)
-     * @return 발행 결과 (success, productId, message)
-     */
-    @Operation(
-            summary = "Avro 상품 클릭 이벤트 발행",
-            description = "productId, memberId를 받아서 Avro 스키마 기반으로 GenericRecord를 생성하여 Kafka에 발행합니다."
-    )
-    @PostMapping("/avro/publish")
-    public ResponseEntity<Map<String, Object>> createProductClickAvro(
-            @RequestParam Long productId,
-            @RequestParam(required = false) Long memberId
-    ) {
-        avroEventProducer.publishProductEvent(productId, memberId);
-        
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("productId", productId);
-        response.put("memberId", memberId);
-        response.put("message", "Avro product click event published successfully");
-        
-        return ResponseEntity.ok(response);
-    }
+    // JSON 브랜치에서는 /click 하나의 엔드포인트만 유지하고,
+    // 예전 Avro 테스트용 엔드포인트(/avro/publish)는 제거했습니다.
 }
 
 

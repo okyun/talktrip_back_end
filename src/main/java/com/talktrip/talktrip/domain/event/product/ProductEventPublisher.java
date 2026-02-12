@@ -1,7 +1,7 @@
 package com.talktrip.talktrip.domain.event.product;
 
 import com.talktrip.talktrip.domain.messaging.dto.product.ProductEvent;
-import com.talktrip.talktrip.domain.messaging.avro.AvroEventProducer;
+import com.talktrip.talktrip.domain.messaging.avro.KafkaEventProducer;
 import com.talktrip.talktrip.domain.product.entity.Product;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -29,7 +29,7 @@ public class ProductEventPublisher {
     private static final Logger logger = LoggerFactory.getLogger(ProductEventPublisher.class);
 
     private final ApplicationEventPublisher applicationEventPublisher;
-    private final AvroEventProducer avroEventProducer;
+    private final KafkaEventProducer kafkaEventProducer;
 
     /**
      * 상품 클릭 이벤트 발행
@@ -51,7 +51,7 @@ public class ProductEventPublisher {
                     product.getId(), memberId);
             
             // 2. Kafka 이벤트 발행 (외부 시스템/스트림 처리용)
-            avroEventProducer.publishProductClick(product.getId(), memberId);
+            kafkaEventProducer.publishProductClick(product.getId(), memberId);
             logger.debug("상품 클릭 Kafka 이벤트 발행 완료: productId={}, memberId={}", 
                     product.getId(), memberId);
         } catch (Exception e) {

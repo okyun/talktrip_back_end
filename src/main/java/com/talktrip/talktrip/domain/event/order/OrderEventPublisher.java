@@ -4,7 +4,7 @@ import com.talktrip.talktrip.domain.messaging.dto.order.OrderCreatedEventDTO;
 import com.talktrip.talktrip.domain.messaging.dto.order.OrderEvent;
 import com.talktrip.talktrip.domain.messaging.dto.order.OrderItemEventDTO;
 import com.talktrip.talktrip.domain.messaging.dto.order.PaymentSuccessEventDTO;
-import com.talktrip.talktrip.domain.messaging.avro.AvroEventProducer;
+import com.talktrip.talktrip.domain.messaging.avro.KafkaEventProducer;
 import com.talktrip.talktrip.domain.order.entity.CardPayment;
 import com.talktrip.talktrip.domain.order.entity.Order;
 import com.talktrip.talktrip.domain.order.entity.Payment;
@@ -38,7 +38,7 @@ public class OrderEventPublisher {
     private static final Logger logger = LoggerFactory.getLogger(OrderEventPublisher.class);
 
     private final ApplicationEventPublisher applicationEventPublisher;
-    private final AvroEventProducer avroEventProducer;
+    private final KafkaEventProducer kafkaEventProducer;
 
     /**
      * 주문 생성 이벤트 발행
@@ -59,7 +59,7 @@ public class OrderEventPublisher {
                     order.getId(), order.getOrderCode());
             
             // 2. Kafka 이벤트 발행 (외부 시스템/스트림 처리용)
-            avroEventProducer.publishOrderCreated(eventDTO);
+            kafkaEventProducer.publishOrderCreated(eventDTO);
             logger.debug("주문 생성 Kafka 이벤트 발행 완료: orderId={}, orderCode={}", 
                     order.getId(), order.getOrderCode());
         } catch (Exception e) {
