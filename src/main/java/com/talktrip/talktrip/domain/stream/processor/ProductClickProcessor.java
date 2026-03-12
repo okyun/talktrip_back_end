@@ -113,6 +113,12 @@ public class ProductClickProcessor {
                 Consumed.with(Serdes.String(), productClickEventSerde)
         );
 
+        // 스트림에서 상품 클릭 이벤트 수신 로그 (상품명/회원명은 DB 없이 id만 표시)
+        clickStream.peek((key, value) ->
+                logger.info("상품 클릭 이벤트 처리: productId={}, memberId={}",
+                        key, value != null ? value.memberId() : null)
+        );
+
         // 상품 클릭 통계 스트림 처리
         productClickStatsStream(clickStream);
         // TODO: 이상 클릭(fraud) 탐지를 위한 추가 스트림 처리

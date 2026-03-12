@@ -39,4 +39,9 @@ public class ChatRoomDTO {
         this.notReadMessageCount = notReadMessageCount;
         this.roomType = roomType;  // 값 초기화
     }
+
+    /** Redis 캐시에서 읽은 notReadMessageCount로 덮어쓸 때 사용 */
+    public void setNotReadMessageCount(Long notReadMessageCount) {
+        this.notReadMessageCount = notReadMessageCount;
+    }
 }

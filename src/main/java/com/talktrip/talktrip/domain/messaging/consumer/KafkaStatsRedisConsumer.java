@@ -5,12 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
+
+import java.time.Duration;
 
 /**
  * Kafka Streams 집계 결과를 Redis에 반영하는 Consumer
@@ -20,12 +23,17 @@ import org.springframework.stereotype.Component;
  * - Listener: product-click-stats, order-purchase-stats → Redis에 TOP30 저장
  *
  * API 레이어에서는 Redis만 조회하면 되도록 구성합니다.
+ * 통계 키에는 TTL을 걸어 오래된 데이터가 쌓이지 않도록 합니다.
  */
 @Component
 @RequiredArgsConstructor
 public class KafkaStatsRedisConsumer {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaStatsRedisConsumer.class);
+
+    /** 통계 Redis 키 TTL (기본 7일). application.yml 의 kafka.stats.redis.ttl-days 로 변경 가능. */
+    @Value("${kafka.stats.redis.ttl-days:7}")
+    private int statsTtlDays;
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -55,12 +63,17 @@ public class KafkaStatsRedisConsumer {
     ) {
         try {
             String json = objectMapper.writeValueAsString(payload);
+            Duration ttl = Duration.ofDays(statsTtlDays);
 
-            // 최신 TOP30 저장
-            stringRedisTemplate.opsForValue().set("stats:product-click:latest", json);
-            // 윈도우별 TOP30 저장
+            // 최신 TOP30 저장 + TTL
+            String latestKey = "stats:product-click:latest";
+            stringRedisTemplate.opsForValue().set(latestKey, json);
+            stringRedisTemplate.expire(latestKey, ttl);
+            // 윈도우별 TOP30 저장 + TTL
             if (windowStartKey != null) {
-                stringRedisTemplate.opsForValue().set("stats:product-click:" + windowStartKey, json);
+                String windowKey = "stats:product-click:" + windowStartKey;
+                stringRedisTemplate.opsForValue().set(windowKey, json);
+                stringRedisTemplate.expire(windowKey, ttl);
             }
 
             logger.info("[Stats][Redis] product-click-stats 반영 완료: windowStartKey={}, length={}",
@@ -96,10 +109,15 @@ public class KafkaStatsRedisConsumer {
     ) {
         try {
             String json = objectMapper.writeValueAsString(payload);
+            Duration ttl = Duration.ofDays(statsTtlDays);
 
-            stringRedisTemplate.opsForValue().set("stats:order-purchase:latest", json);
+            String latestKey = "stats:order-purchase:latest";
+            stringRedisTemplate.opsForValue().set(latestKey, json);
+            stringRedisTemplate.expire(latestKey, ttl);
             if (windowStartKey != null) {
-                stringRedisTemplate.opsForValue().set("stats:order-purchase:" + windowStartKey, json);
+                String windowKey = "stats:order-purchase:" + windowStartKey;
+                stringRedisTemplate.opsForValue().set(windowKey, json);
+                stringRedisTemplate.expire(windowKey, ttl);
             }
 
             logger.info("[Stats][Redis] order-purchase-stats 반영 완료: windowStartKey={}, length={}",

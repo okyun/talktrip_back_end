@@ -7,6 +7,7 @@ import com.talktrip.talktrip.domain.chat.dto.response.ChatMessagePush;
 import com.talktrip.talktrip.domain.chat.entity.ChatMessage;
 import com.talktrip.talktrip.domain.chat.entity.ChatRoom;
 import com.talktrip.talktrip.domain.chat.entity.ChatRoomAccount;
+import com.talktrip.talktrip.domain.chat.enums.RoomType;
 import com.talktrip.talktrip.domain.chat.message.dto.ChatRoomUpdateMessage;
 import com.talktrip.talktrip.domain.chat.repository.ChatMessageRepository;
 import com.talktrip.talktrip.domain.chat.repository.ChatRoomMemberRepository;
@@ -139,18 +140,30 @@ public class ChatService {
             sendSidebarUpdatesToLocalSessions(memberEmails, sidebars);
 
             // 7) 커밋 이후에만 캐시 + 브로드캐스트
+            final ChatMessage entityForCache = entity;
+            final LocalDateTime messageCreatedAt = entity.getCreatedAt();
+            final String lastMessageContent = entity.getMessage();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
                     try {
                         // lastMessage 캐싱
-                        chatMessageCacheService.cacheLastMessage(entity, principal.getName());
+                        chatMessageCacheService.cacheLastMessage(entityForCache, principal.getName());
 
-                        // 수신자 unread INCR
+                        // 최근 메시지 N개 List에 push
+                        chatMessageCacheService.pushRecentMessage(dto.getRoomId(),
+                                ChatMemberRoomWithMessageDto.from(entityForCache));
+
+                        // room meta updatedAt / lastMessage 갱신
+                        chatMessageCacheService.updateRoomMetaOnNewMessage(dto.getRoomId(), messageCreatedAt, lastMessageContent);
+
+                        // 수신자 unread INCR + 참여자 전원 user:rooms ZSET 갱신 (최근 대화 순)
+                        long score = messageCreatedAt.atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli();
                         for (String email : memberEmails) {
                             if (!email.equals(sender)) {
                                 chatMessageCacheService.incrementUnread(dto.getRoomId(), email);
                             }
+                            chatMessageCacheService.addUserRoom(email, dto.getRoomId(), score);
                         }
 
                         // Redis 브로드캐스트 (다른 인스턴스용)
@@ -269,6 +282,13 @@ public class ChatService {
         chatRoomMemberRepository.save(buyerMember);
         chatRoomMemberRepository.save(sellerMember);
 
+        // Redis 채팅방 목록 캐시: 새 방 메타 + 두 멤버의 user:rooms에 추가
+        LocalDateTime now = LocalDateTime.now();
+        long score = now.atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli();
+        chatMessageCacheService.setRoomMeta(newRoomId, now, "", "", RoomType.DIRECT);
+        chatMessageCacheService.addUserRoom(accountEmail, newRoomId, score);
+        chatMessageCacheService.addUserRoom(sellerAccountEmail, newRoomId, score);
+
         if (webSocketSessionManager.isUserOnlineLocally(accountEmail)) {
             webSocketSessionManager.joinRoom(accountEmail, newRoomId);
         }
@@ -292,6 +312,7 @@ public class ChatService {
     @Transactional
     public void markChatRoomAsDeleted(String accountEmail, String roomId) {
         chatRoomMemberRepository.updateIsDelByMemberIdAndRoomId(accountEmail, roomId, 1);
+        chatMessageCacheService.removeUserRoom(accountEmail, roomId);
     }
 
     @Transactional
@@ -354,32 +375,53 @@ public class ChatService {
         // 2) page size 정규화
         final int size = (limit == null || limit <= 0 || limit > 200) ? 50 : limit;
 
-        // 3) 정렬: 서버는 항상 최신→과거 (DESC)로 가져온다 - 시퀀스 기반
+        // 3) 첫 페이지(cursor 없음): Redis 최근 메시지 List 시도
+        if (cursor == null || cursor.isBlank()) {
+            List<ChatMemberRoomWithMessageDto> cached = chatMessageCacheService.getRecentMessages(roomId, size);
+            if (!cached.isEmpty()) {
+                chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail, SeoulTimeUtil.now());
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        chatMessageCacheService.clearUnread(roomId, accountEmail);
+                    }
+                });
+                String nextCursor = null;
+                boolean hasNext = (cached.size() == size);
+                if (!cached.isEmpty()) {
+                    var last = cached.get(cached.size() - 1);
+                    nextCursor = CursorUtil.encode(last.createdAt(), last.sequenceNumber().toString());
+                }
+                return SliceResponse.of(cached, hasNext ? nextCursor : null, hasNext);
+            }
+        }
+
+        // 4) Redis 미적중 또는 커서 페이지: DB 조회
         var sort = Sort.by(Sort.Direction.DESC, "sequenceNumber", "createdAt", "messageId");
         var pageable = PageRequest.of(0, size, sort);
 
-        // 4) 메시지 조회 (첫 진입 vs 커서 이전) - 시퀀스 기반
         List<ChatMessage> entities;
         if (cursor == null || cursor.isBlank()) {
-            // 첫 페이지
             entities = chatMessageRepository.findFirstPage(roomId, pageable);
         } else {
-            // 커서 이전 페이지 - 시퀀스 기반
-            var c = CursorUtil.decode(cursor); // sequenceNumber + createdAt + messageId
+            var c = CursorUtil.decode(cursor);
             entities = chatMessageRepository.findSliceBefore(
-                    roomId, Long.parseLong(c.messageId()), pageable // messageId 자리에 sequenceNumber 저장
+                    roomId, Long.parseLong(c.messageId()), pageable
             );
         }
 
-        // 5) 읽음 처리 (내 lastReadAt 갱신)
         chatRoomMemberRepository.updateLastReadTime(roomId, accountEmail, SeoulTimeUtil.now());
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                chatMessageCacheService.clearUnread(roomId, accountEmail);
+            }
+        });
 
-        // 6) DTO 매핑
         var items = entities.stream()
                 .map(ChatMemberRoomWithMessageDto::from)
                 .toList();
 
-        // 7) nextCursor/hasNext 계산 - 시퀀스 기반
         String nextCursor = null;
         boolean hasNext = false;
         if (!entities.isEmpty()) {

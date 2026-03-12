@@ -17,11 +17,15 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.*;
 import org.springframework.kafka.annotation.EnableKafka;
+import org.springframework.kafka.config.TopicBuilder;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Kafka Consumer 및 Producer 설정
@@ -43,6 +47,42 @@ public class KafkaConfig {
 
     @Value("${spring.kafka.consumer.group-id}")
     private String groupId;
+
+    private static final int DEFAULT_TOPIC_PARTITIONS = 3;
+    private static final short DEFAULT_REPLICATION_FACTOR = 1;
+
+    // ----------- Kafka Admin: 토픽 자동 생성 (파티션 3개) -----------
+
+    @Bean
+    public org.springframework.kafka.core.KafkaAdmin kafkaAdmin() {
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        return new org.springframework.kafka.core.KafkaAdmin(configs);
+    }
+
+    @Bean
+    public NewTopic topicProductClick(
+            @Value("${kafka.topics.product-click:product-click}") String topicName) {
+        return TopicBuilder.name(topicName).partitions(DEFAULT_TOPIC_PARTITIONS).replicas(DEFAULT_REPLICATION_FACTOR).build();
+    }
+
+    @Bean
+    public NewTopic topicOrderCreated(
+            @Value("${kafka.topics.order-created:order-created}") String topicName) {
+        return TopicBuilder.name(topicName).partitions(DEFAULT_TOPIC_PARTITIONS).replicas(DEFAULT_REPLICATION_FACTOR).build();
+    }
+
+    @Bean
+    public NewTopic topicProductClickStats(
+            @Value("${kafka.topics.product-click-stats:product-click-stats}") String topicName) {
+        return TopicBuilder.name(topicName).partitions(DEFAULT_TOPIC_PARTITIONS).replicas(DEFAULT_REPLICATION_FACTOR).build();
+    }
+
+    @Bean
+    public NewTopic topicOrderPurchaseStats(
+            @Value("${kafka.topics.order-purchase-stats:order-purchase-stats}") String topicName) {
+        return TopicBuilder.name(topicName).partitions(DEFAULT_TOPIC_PARTITIONS).replicas(DEFAULT_REPLICATION_FACTOR).build();
+    }
 
     // ----------- Consumer Factory (Listener) --------------
 

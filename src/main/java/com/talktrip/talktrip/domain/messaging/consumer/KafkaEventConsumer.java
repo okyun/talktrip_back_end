@@ -1,5 +1,7 @@
 package com.talktrip.talktrip.domain.messaging.consumer;
 
+import com.talktrip.talktrip.domain.member.repository.MemberRepository;
+import com.talktrip.talktrip.domain.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +29,9 @@ public class KafkaEventConsumer {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaEventConsumer.class);
 
+    private final MemberRepository memberRepository;
+    private final ProductRepository productRepository;
+
     /**
      * product-click 토픽 디버깅용 Consumer
      *
@@ -49,8 +54,43 @@ public class KafkaEventConsumer {
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset
     ) {
-        logger.info("[DEBUG][Kafka] product-click 수신: topic={}, partition={}, offset={}, key={}, payload={}",
-                topic, partition, offset, key, payload);
+        Long productId = numberFromPayload(payload, "productId");
+        Long memberId = numberFromPayload(payload, "memberId");
+        String userLabel = resolveUserLabel(memberId);
+        String productLabel = resolveProductLabel(productId);
+        logger.info("{} 사용자가 {} 상품을 클릭했습니다. topic={}, partition={}, offset={}",
+                userLabel, productLabel, topic, partition, offset);
+    }
+
+    private Long numberFromPayload(Map<String, Object> payload, String key) {
+        if (payload == null) return null;
+        Object v = payload.get(key);
+        if (v == null) return null;
+        if (v instanceof Number n) return n.longValue();
+        try {
+            return Long.parseLong(v.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String resolveUserLabel(Long memberId) {
+        if (memberId == null) return "비회원";
+        return memberRepository.findById(memberId)
+                .map(m -> {
+                    String n = m.getNickname();
+                    if (n != null && !n.isBlank()) return n;
+                    String name = m.getName();
+                    return (name != null && !name.isBlank()) ? name : "회원(id:" + memberId + ")";
+                })
+                .orElse("회원(id:" + memberId + ")");
+    }
+
+    private String resolveProductLabel(Long productId) {
+        if (productId == null) return "알 수 없음";
+        return productRepository.findById(productId)
+                .map(p -> p.getProductName())
+                .orElse("상품(id:" + productId + ")");
     }
 
     /**
@@ -100,8 +140,12 @@ public class KafkaEventConsumer {
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
             @Header(KafkaHeaders.OFFSET) long offset
     ) {
-        logger.debug("[AUDIT][Kafka] product-click 수신 (audit consumer): topic={}, partition={}, offset={}, key={}, payload={}",
-                topic, partition, offset, key, payload);
+        Long productId = numberFromPayload(payload, "productId");
+        Long memberId = numberFromPayload(payload, "memberId");
+        String userLabel = resolveUserLabel(memberId);
+        String productLabel = resolveProductLabel(productId);
+        logger.debug("{} 사용자가 {} 상품을 클릭했습니다. (audit) topic={}, partition={}, offset={}",
+                userLabel, productLabel, topic, partition, offset);
     }
 }
 

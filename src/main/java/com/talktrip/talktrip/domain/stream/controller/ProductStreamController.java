@@ -1,11 +1,17 @@
 package com.talktrip.talktrip.domain.stream.controller;
 
+import com.talktrip.talktrip.domain.member.entity.Member;
+import com.talktrip.talktrip.domain.member.repository.MemberRepository;
 import com.talktrip.talktrip.domain.messaging.avro.KafkaEventProducer;
 import com.talktrip.talktrip.domain.messaging.dto.product.ProductClickStatResponse;
+import com.talktrip.talktrip.domain.product.entity.Product;
+import com.talktrip.talktrip.domain.product.repository.ProductRepository;
 import com.talktrip.talktrip.domain.stream.service.ProductStreamsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,8 +33,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ProductStreamController {
 
+    private static final Logger logger = LoggerFactory.getLogger(ProductStreamController.class);
+
     private final ProductStreamsService productStreamsService;
     private final KafkaEventProducer kafkaEventProducer;
+    private final MemberRepository memberRepository;
+    private final ProductRepository productRepository;
 
     /**
      * 상품 클릭 통계 TOP 30 조회
@@ -87,8 +97,31 @@ public class ProductStreamController {
             @RequestParam Long productId,
             @RequestParam(required = false) Long memberId
     ) {
+        String userLabel = resolveUserLabel(memberId);
+        String productLabel = resolveProductLabel(productId);
+        logger.info("{} 사용자가 {} 상품을 클릭했습니다.", userLabel, productLabel);
+
         kafkaEventProducer.publishProductEvent(productId, memberId);
         return ResponseEntity.ok("Product click event published");
+    }
+
+    private String resolveUserLabel(Long memberId) {
+        if (memberId == null) return "비회원";
+        return memberRepository.findById(memberId)
+                .map(m -> {
+                    String n = m.getNickname();
+                    if (n != null && !n.isBlank()) return n;
+                    String name = m.getName();
+                    return (name != null && !name.isBlank()) ? name : "회원(id:" + memberId + ")";
+                })
+                .orElse("회원(id:" + memberId + ")");
+    }
+
+    private String resolveProductLabel(Long productId) {
+        if (productId == null) return "알 수 없음";
+        return productRepository.findById(productId)
+                .map(Product::getProductName)
+                .orElse("상품(id:" + productId + ")");
     }
 
     // JSON 브랜치에서는 /click 하나의 엔드포인트만 유지하고,
