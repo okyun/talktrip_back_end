@@ -21,6 +21,7 @@ import com.talktrip.talktrip.domain.product.entity.ProductOption;
 import com.talktrip.talktrip.domain.product.repository.ProductRepository;
 import com.talktrip.talktrip.domain.product.service.StockService;
 import com.talktrip.talktrip.domain.event.order.OrderEventPublisher;
+import com.talktrip.talktrip.global.redis.RedisMessageBroker;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.json.simple.JSONObject;
@@ -53,6 +54,8 @@ public class OrderService {
     private final CardPaymentRepository cardPaymentRepository;
     private final OrderEventPublisher orderEventPublisher;
     private final StockService stockService;
+    private final RedisMessageBroker redisMessageBroker;
+    private final OrderNotificationStreamService orderNotificationStreamService;
 
     public OrderResponseDTO createOrder(Long productId, OrderRequestDTO orderRequest, Long memberId) {
 
@@ -256,6 +259,21 @@ public class OrderService {
                     order.getId(), order.getOrderCode(), e);
             // 이벤트 발행 실패는 결제 처리에 영향을 주지 않음
         }
+
+        // 9. 결제 성공 WebSocket 알림 (트랜잭션 커밋 후, 사용자별 채널로 전송)
+        try {
+            String email = order.getMember().getAccountEmail();
+            String message = "주문이 완료되었습니다. 주문코드: " + order.getOrderCode();
+            redisMessageBroker.publishToUserAfterCommit(email, message);
+            logger.info("결제 성공 WebSocket 알림 발행 완료: email={}, orderCode={}", email, order.getOrderCode());
+        } catch (Exception e) {
+            logger.warn("결제 성공 WebSocket 알림 발행 실패: orderId={}, orderCode={}, error={}",
+                    order.getId(), order.getOrderCode(), e.getMessage());
+        }
+
+        // 10. 결제 성공 알림/이메일 작업 큐에 적재 (Redis Streams)
+        //     Consumer(별도 워커)가 stream:order:notification 을 읽어 이메일/푸시 발송을 처리한다.
+        orderNotificationStreamService.enqueueOrderCompleted(order, payment);
     }
 
     private PaymentMethod mapToPaymentMethod(String methodStr) {
