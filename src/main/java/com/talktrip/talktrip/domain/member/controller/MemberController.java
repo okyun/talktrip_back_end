@@ -1,6 +1,7 @@
 package com.talktrip.talktrip.domain.member.controller;
 
 import com.talktrip.talktrip.domain.member.dto.request.MemberUpdateRequestDTO;
+import com.talktrip.talktrip.domain.member.dto.response.MemberProfileView;
 import com.talktrip.talktrip.domain.member.dto.response.MemberResponseDTO;
 import com.talktrip.talktrip.domain.member.service.KakaoAuthService;
 import com.talktrip.talktrip.domain.member.service.MemberService;
@@ -49,6 +50,14 @@ public class MemberController {
         claims.put("refreshToken", refreshToken);
 
         return claims;
+    }
+
+    @Operation(summary = "회원 공개 프로필 (캐시)", description = "닉네임·이름·프로필 이미지 URL. 채팅/카드 UI용.")
+    @GetMapping("/member/profile/{memberId}")
+    public ResponseEntity<MemberProfileView> getMemberProfile(@PathVariable Long memberId) {
+        return memberService.getMemberProfileView(memberId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @Operation(summary = "내 정보 조회", description = "로그인한 사용자의 정보를 반환합니다.")

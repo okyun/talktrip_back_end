@@ -12,6 +12,7 @@ import com.talktrip.talktrip.global.exception.ErrorCode;
 import com.talktrip.talktrip.global.exception.MemberException;
 import com.talktrip.talktrip.global.exception.ProductException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class LikeService {
     private final ProductRepository productRepository;
     private final MemberRepository memberRepository;
 
+    @CacheEvict(cacheNames = "product", allEntries = true)
     @Transactional
     public void toggleLike(Long productId, Long memberId) {
         if (likeRepository.existsByProductIdAndMemberId(productId, memberId)) {

@@ -2,6 +2,7 @@ package com.talktrip.talktrip.domain.product.service;
 
 import com.talktrip.talktrip.domain.like.repository.LikeRepository;
 import com.talktrip.talktrip.domain.product.dto.response.ProductDetailResponse;
+import com.talktrip.talktrip.domain.product.dto.response.ProductSearchPageCache;
 import com.talktrip.talktrip.domain.product.dto.response.ProductSummaryResponse;
 import com.talktrip.talktrip.domain.product.entity.Product;
 import com.talktrip.talktrip.domain.product.entity.ProductOption;
@@ -12,9 +13,11 @@ import com.talktrip.talktrip.domain.review.repository.ReviewRepository;
 import com.talktrip.talktrip.global.exception.ErrorCode;
 import com.talktrip.talktrip.global.exception.ProductException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,11 +36,32 @@ public class ProductService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
+    @Lazy
+    @Autowired
+    private ProductService self;
+
     @Value("${fastapi.base-url}")
     private String fastApiBaseUrl;
 
     @Transactional(readOnly = true)
     public Page<ProductSummaryResponse> searchProducts(
+            String keyword,
+            String countryName,
+            Long memberId,
+            Pageable pageable
+    ) {
+        return self.searchProductsCached(keyword, countryName, memberId, pageable).toPage(pageable);
+    }
+
+    /**
+     * 상품 목록(검색·국가·정렬·페이지) Redis 캐시 — 키에 memberId 포함(좋아요 여부 반영).
+     */
+    @Cacheable(
+            cacheNames = "product",
+            key = "'search:' + (#keyword == null ? \"\" : #keyword.trim()) + ':' + #countryName + ':m:' + (#memberId != null ? #memberId : -1L) + ':p:' + #pageable.pageNumber + ':s:' + #pageable.pageSize + ':sort:' + #pageable.sort.toString()"
+    )
+    @Transactional(readOnly = true)
+    public ProductSearchPageCache searchProductsCached(
             String keyword,
             String countryName,
             Long memberId,
@@ -54,15 +78,13 @@ public class ProductService {
 
         List<Product> products = page.getContent();
         if (products.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, page.getTotalElements());
+            return new ProductSearchPageCache(List.of(), page.getTotalElements());
         }
 
         List<Long> productIds = products.stream().map(Product::getId).toList();
 
-        // 평균별점 배치 조회
         Map<Long, Double> avgStarMap = reviewRepository.fetchAvgStarsByProductIds(productIds);
 
-        // 좋아요 배치 조회
         Set<Long> likedProductIds = (memberId == null)
                 ? Set.of()
                 : likeRepository.findLikedProductIds(memberId, productIds);
@@ -73,11 +95,27 @@ public class ProductService {
             return ProductSummaryResponse.from(p, avgStar, liked);
         }).toList();
 
-        return new PageImpl<>(content, pageable, page.getTotalElements());
+        return new ProductSearchPageCache(content, page.getTotalElements());
     }
 
     @Transactional(readOnly = true)
     public ProductDetailResponse getProductDetail(
+            Long productId,
+            Long memberId,
+            Pageable pageable
+    ) {
+        return self.getProductDetailCached(productId, memberId, pageable);
+    }
+
+    /**
+     * 상품 상세(리뷰 페이지·좋아요·옵션 요약) Redis 캐시.
+     */
+    @Cacheable(
+            cacheNames = "product",
+            key = "'detail:' + #productId + ':m:' + (#memberId != null ? #memberId : -1L) + ':p:' + #pageable.pageNumber + ':s:' + #pageable.pageSize + ':sort:' + #pageable.sort.toString()"
+    )
+    @Transactional(readOnly = true)
+    public ProductDetailResponse getProductDetailCached(
             Long productId,
             Long memberId,
             Pageable pageable
@@ -111,7 +149,6 @@ public class ProductService {
 
         return ProductDetailResponse.from(product, avgStar, reviewResponses, isLiked);
     }
-
 
     @Transactional(readOnly = true)
     public List<ProductSummaryResponse> aiSearchProducts(
