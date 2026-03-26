@@ -1,7 +1,6 @@
 package com.talktrip.talktrip.global.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.CacheManager;
@@ -55,24 +54,26 @@ public class CacheConfig {
         
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultCacheConfig)
-                .withCacheConfiguration("user", createCacheConfig(Duration.ofMinutes(60))) // 사용자 정보: 1시간
-                .withCacheConfiguration("product", createCacheConfig(Duration.ofMinutes(15))) // 상품 정보: 15분
-                .withCacheConfiguration("chat", createCacheConfig(Duration.ofMinutes(5))) // 채팅 정보: 5분
-                .withCacheConfiguration("order", createCacheConfig(Duration.ofMinutes(10))) // 주문 정보: 10분
+                .withCacheConfiguration("user", createCacheConfig(Duration.ofMinutes(60), objectMapper)) // 사용자 정보: 1시간
+                .withCacheConfiguration("product", createCacheConfig(Duration.ofMinutes(15), objectMapper)) // 상품 정보: 15분
+                .withCacheConfiguration("chat", createCacheConfig(Duration.ofMinutes(5), objectMapper)) // 채팅 정보: 5분
+                .withCacheConfiguration("order", createCacheConfig(Duration.ofMinutes(10), objectMapper)) // 주문 정보: 10분
                 .build();
     }
 
     /**
      * 특정 캐시 설정 생성
-     * 
+     *
      * @param ttl 캐시 만료 시간
+     * @param objectMapper {@link JavaTimeModule} 등 애플리케이션과 동일한 직렬화 규칙 사용
      * @return RedisCacheConfiguration
      */
-    private RedisCacheConfiguration createCacheConfig(Duration ttl) {
+    private RedisCacheConfiguration createCacheConfig(Duration ttl, ObjectMapper objectMapper) {
+        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         return RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(ttl)
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
-                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer()))
-                .disableCachingNullValues(); //NULL 값에는 캐싱하지 않음.
+                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(jsonSerializer))
+                .disableCachingNullValues(); // NULL 값에는 캐싱하지 않음.
     }
 }
